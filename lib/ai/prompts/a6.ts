@@ -1,6 +1,6 @@
 import { COUNCIL_RULES } from "./common";
 
-export const A6_PROMPT_VERSION = "a6-v2";
+export const A6_PROMPT_VERSION = "a6-v3";
 
 const ISOLATION = `
 [보안 규칙 — 반드시 지킬 것]
@@ -48,7 +48,7 @@ ${i.previous ? `- 버전 ${i.previous.version_no}: ${i.previous.score}점, 부�
 
 [작성 규칙]
 1. criteria: 위 완료 기준을 하나씩 같은 순서로 판정한다(met=충족, partial=부분, unmet=미충족). evidence 에 작업물에서 확인한 근거(인용·위치·화면 요소)를 짧게 쓴다. 확인할 수 없으면 unmet 이 아니라 그 이유를 쓰고 partial 로 둔다.
-2. score: 1~100 정수. 기준 충족 비율을 중심으로, 품질(오탈자·정보 정확성·완성도)을 반영한다. 최종 제출해도 될 수준이면 90 이상.
+2. score: 1~100 정수. 시스템 규칙의 [국서 역할]에서 주관 국서 설명을 수행 지표로 삼는다(예: 집행 매뉴얼이면 역할표·동선·체크리스트·비상 대응이 있는지). 기준 충족 비율을 중심으로, 품질(오탈자·정보 정확성·완성도)을 반영한다. 최종 제출해도 될 수준이면 90 이상.
 3. missing_items: 완료까지 빠진 것(구체적 항목명). suggestions: 바로 실행할 수 있는 개선 제안.
 4. 이전 평가가 있으면 무엇이 나아졌는지 summary 에 한 문장으로 쓴다.
 5. 한국어로 쓴다.`;

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
+import { createProject } from "@/lib/services/projects";
 import { resetAllTables } from "@/lib/setup/reset";
 import { ensureBaseSetup } from "@/lib/setup/bootstrap";
 import { seedDemo } from "@/lib/setup/demo";
@@ -90,21 +91,21 @@ describe("T2 회의록 분석", () => {
     expect(await prisma.notification.count({ where: { type: "review_pending" } })).toBeGreaterThan(0);
   });
 
-  it("제안: 행사 사업 + 회의록 근거 업무(inferred=false) + 표준 업무(inferred=true), 규칙 엔진 마감·근거", async () => {
+  it("제안: 행사 사업 + 회의록에 나온 업무만(표준 업무 템플릿을 덧붙이지 않음), 회의록 기한 우선·근거", async () => {
     const { meetingId } = await analyze(MINUTES);
     const props = await prisma.proposal.findMany({ where: { source_id: meetingId, status: "pending" } });
     const np = props.find((x) => x.kind === "new_project")!;
     expect(np.payload).toMatchObject({ title: "종강 간식 행사", event_start: "2026-12-10", expected_beneficiaries: 150, funding: ["student_fee"] });
-    const fromMinutes = props.filter((x) => x.kind === "new_task" && !x.inferred);
-    const inferred = props.filter((x) => x.kind === "new_task" && x.inferred);
-    expect(fromMinutes.length).toBeGreaterThan(0);
-    expect(inferred.length).toBeGreaterThan(5);
-    for (const x of inferred) expect(x.inference_reason).toMatch(/표준 업무 템플릿/);
-    const draft = props.find((x) => (x.payload as { template_key?: string }).template_key === "PLN_DRAFT")!;
-    expect(draft.inferred).toBe(false); // "기획안 작성"은 회의록 근거
-    expect((draft.payload as { due_date: string; due_reason: string }).due_reason).toMatch(/회의록에 명시된 기한/);
-    const publish = props.find((x) => (x.payload as { template_key?: string }).template_key === "PRO_PUBLISH")!;
-    expect((publish.payload as { due_date: string }).due_date).toBe("2026-12-03"); // 규칙 엔진 D-7
+    const tasks = props.filter((x) => x.kind === "new_task");
+    expect(tasks.length).toBeGreaterThan(0);
+    // 사용자 결정(2026-10-31): 국서 역할(표준 업무) 목록을 업무로 자동 생성하지 않는다
+    expect(tasks.filter((x) => x.inferred)).toHaveLength(0);
+    for (const x of tasks) expect(JSON.stringify(x.evidence)).not.toBe("[]");
+    const draft = tasks.find((x) => (x.payload as { template_key?: string }).template_key === "PLN_DRAFT")!;
+    expect((draft.payload as { due_reason: string }).due_reason).toMatch(/회의록에 명시된 기한/);
+    const card = tasks.find((x) => (x.payload as { title: string }).title === "간식 행사 카드뉴스 제작")!;
+    expect((card.payload as { due_date: string; lead_department: string })).toMatchObject({ due_date: "2026-11-24", lead_department: "promotion" });
+    expect(tasks.some((x) => (x.payload as { template_key?: string }).template_key === "PRO_PUBLISH")).toBe(false);
   });
 });
 
@@ -139,6 +140,17 @@ describe("T3 중복 방지·재분석", () => {
     const up = p2.find((x) => x.kind === "update_project")!;
     expect(up.before_snapshot).toEqual({ event_start: "2026-12-10" });
     expect((up.payload as { changes: object }).changes).toEqual({ event_start: "2026-12-11" });
+  });
+});
+
+describe("데모 사업과 실제 회의록 분리", () => {
+  it("이름이 비슷한 '[데모]' 사업이 있어도 실제 회의록은 그 사업에 연결하지 않고 새 사업으로 제안", async () => {
+    const demo = await createProject(prisma, pres, { title: "[데모] 종강 간식 행사", event_start: "2026-12-10" });
+    await prisma.project.update({ where: { id: demo.id }, data: { is_demo: true } });
+    const { meetingId } = await analyze(MINUTES);
+    const props = await prisma.proposal.findMany({ where: { source_id: meetingId, status: "pending" } });
+    expect(props.some((x) => x.kind === "new_project")).toBe(true);
+    expect(props.some((x) => x.target_id === demo.id || x.project_key === demo.id)).toBe(false);
   });
 });
 
@@ -201,10 +213,11 @@ describe("승인 트랜잭션 (8-4, PART 7 단계 7·8)", () => {
     const t = await prisma.task.findFirstOrThrow({ where: { title: "종강 행사 기획안 작성" } });
     expect(t).toMatchObject({ due_state: "confirmed", template_key: "PLN_DRAFT", project_id: project.id });
     expect((await prisma.proposal.findUniqueOrThrow({ where: { id: draft.id } })).status).toBe("edited_approved");
-    const pub = await prisma.task.findFirstOrThrow({ where: { project_id: project.id, template_key: "PRO_PUBLISH" } });
-    expect(pub.due_state).toBe("proposed"); // 수정 없이 승인 → 제안 유지(N4)
-    expect(await prisma.taskDependency.count({ where: { task: { project_id: project.id } } })).toBeGreaterThan(5);
-    expect((await prisma.task.findFirstOrThrow({ where: { project_id: project.id, template_key: "PLN_APPROVAL" } })).status).toBe("blocked");
+    const card = await prisma.task.findFirstOrThrow({ where: { project_id: project.id, title: "간식 행사 카드뉴스 제작" } });
+    expect(card.due_state).toBe("proposed"); // 수정 없이 승인 → 제안 유지(N4)
+    // 홍보물은 기획안(결재 업무가 따로 없으면 기획안 작성 업무) 뒤 — D7 차단
+    expect(await prisma.taskDependency.count({ where: { task_id: card.id, depends_on_task_id: t.id } })).toBe(1);
+    expect(card.status).toBe("blocked");
     expect((await prisma.meeting.findUniqueOrThrow({ where: { id: meetingId } })).status).toBe("analyzed"); // 아직 남은 제안 있음
   });
 

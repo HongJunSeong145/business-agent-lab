@@ -64,9 +64,42 @@ const KEYWORDS: [TemplateKey, RegExp][] = [
   ["SEC_PROPOSAL", /제휴\s*요청서|요청서/],
   ["OPS_EVIDENCE", /사진|수혜자\s*명단/],
 ];
-export function guessTemplate(text: string): TemplateKey | null {
-  for (const [k, re] of KEYWORDS) if (re.test(text)) return k;
+export function guessTemplate(text: string, lead?: string | null): TemplateKey | null {
+  // 주관 국서가 정해져 있으면 그 국서의 업무 종류만(예: 재정국 업무 설명에 '기획안'이 나와도 기획안 마감을 쓰지 않음)
+  for (const [k, re] of KEYWORDS) if (re.test(text) && (!lead || TEMPLATES[k].lead === lead)) return k;
   return null;
+}
+
+/** 업무 문장 → 맡을 국서 추정(주어 없는 "~작성요망" 문장용, 국서 역할 기준) */
+const DEPT_WORDS: [string, RegExp][] = [
+  ["operations", /매뉴얼|메뉴얼|현장|인력|당일\s*집행|동선/],
+  ["promotion", /홍보|카드뉴스|포스터|현수막/],
+  ["planning", /기획안|기획/],
+  ["finance", /예산|영수|증빙|구입|구매|정산|결산|업체.*가격|가격/],
+  ["secretariat", /제휴|요청서|문의|공문/],
+];
+export function guessDept(text: string): string | null {
+  for (const [d, re] of DEPT_WORDS) if (re.test(text)) return d;
+  return null;
+}
+
+/** part 의 글자쌍이 text 안에 얼마나 들어 있나(0~1) — 업무 설명·체크리스트에 회의록 항목이 담겼는지 */
+export function contains(text: string, part: string): number {
+  const bg = (x: string) => {
+    const t = normTitle(x);
+    const out: string[] = [];
+    for (let i = 0; i < t.length - 1; i++) out.push(t.slice(i, i + 2));
+    return out;
+  };
+  const P = bg(part);
+  if (!P.length) return 0;
+  const pool = bg(text);
+  let hit = 0;
+  for (const x of P) {
+    const k = pool.indexOf(x);
+    if (k >= 0) (hit++, pool.splice(k, 1));
+  }
+  return hit / P.length;
 }
 
 export type Member = { id: string; name: string };
@@ -160,7 +193,7 @@ export function buildProposals(input: {
   }
 
   const pushTask = (key: string | null, shape: ProjShape | null, t: {
-    title: string; description: string | null; lead: string; support: string[]; template_key: string | null; assignee_hint: string | null;
+    title: string; description: string | null; lead: string; support: string[]; template_key: string | null; assignee_hint: string | null; checklist?: string[];
     due: string | null; due_reason: string | null; due_feasible: boolean; evidence: unknown; inferred: boolean; inference_reason: string | null; confidence: number;
   }) => {
     // 이미 있는 업무: 새로 만들지 않는다. 회의록에 다른 마감이 명시돼 있으면 '업무 변경(마감)' 제안으로 연결
@@ -179,7 +212,10 @@ export function buildProposals(input: {
       return;
     }
     covered.push(t.title);
-    const criteria = t.template_key ? TEMPLATES[t.template_key as TemplateKey].criteria.map((text) => ({ text, done: false })) : [];
+    // 완료 기준: AI 가 회의록에서 뽑은 세부 항목 → 없으면 같은 종류 업무의 기본 기준
+    const criteria = t.checklist?.length
+      ? t.checklist.map((text) => ({ text, done: false }))
+      : t.template_key ? TEMPLATES[t.template_key as TemplateKey].criteria.map((text) => ({ text, done: false })) : [];
     rows.push({
       kind: "new_task",
       project_key: key,
@@ -204,65 +240,63 @@ export function buildProposals(input: {
       ? computeSchedule({ eventStart: shape.event_start, today, funding: shape.funding, usesVendor: shape.usesVendor, params }, false)
       : null;
     for (const t of list) {
-      // 표준 업무 키가 없어도 업무명(기획안·홍보물·매뉴얼 등)으로 규칙 엔진 마감을 찾는다 — 마감 빈칸 방지
-      const tk = t.template_key ?? guessTemplate(`${t.title} ${t.description ?? ""}`);
+      // 마감 우선순위: ① 회의록에 적힌 기한 ② 회의록 행사일·선후관계로 AI 가 거꾸로 계산한 날짜(근거 표시) ③ 규칙 엔진(업무 종류로 추정)
+      const tk = t.template_key ?? guessTemplate(t.title, t.lead_department);
       const s = tk && schedule ? schedule.tasks.find((x) => x.key === tk) : undefined;
-      const fromMinutes = t.due_date && t.due_date >= today;
+      const valid = Boolean(t.due_date && t.due_date >= today && (!shape?.event_start || t.due_date <= shape.event_start));
+      const basis = valid ? (t.due_basis ?? "minutes") : null;
+      const para = t.evidence[0]?.para ?? "?";
+      // 업무 종류를 추정했고 이 사업에 같은 종류 업무가 아직 없으면 키를 붙인다(선후관계·기획안 결재 시 완료·결재본 기준 마감 재계산에 쓰임)
+      const taken = (k: string) => (shape?.existingTasks ?? []).some((x) => x.template_key === k) || rows.some((r) => r.project_key === key && (r.payload as { template_key?: string | null }).template_key === k);
+      const keyToSave = t.template_key ?? (tk && key && !taken(tk) ? tk : null);
       pushTask(key, shape, {
-        title: t.title, description: t.description, lead: t.lead_department, support: t.support_departments, template_key: t.template_key, assignee_hint: t.assignee_hint,
-        due: fromMinutes ? t.due_date : s?.due ?? null,
-        due_reason: fromMinutes ? `회의록에 명시된 기한(¶${t.evidence[0]?.para ?? "?"})` : s?.reason ?? null,
-        due_feasible: fromMinutes ? true : s?.feasible ?? true,
+        title: t.title, description: t.description, lead: t.lead_department, support: t.support_departments, template_key: keyToSave, assignee_hint: t.assignee_hint,
+        checklist: t.checklist ?? [],
+        due: basis ? t.due_date : s?.due ?? null,
+        due_reason:
+          basis === "minutes"
+            ? `회의록에 명시된 기한(¶${para})${t.due_reason ? ` — ${t.due_reason}` : ""}`
+            : basis === "reasoned"
+              ? `역산(AI): ${t.due_reason ?? "회의록 행사일·선후관계 기준"}`
+              : s?.reason ?? null,
+        due_feasible: basis ? true : s?.feasible ?? true,
         evidence: t.evidence, inferred: t.inferred, inference_reason: t.inference_reason, confidence: t.confidence,
       });
     }
   }
 
-  // 행사 사업: 회의록에 없던 표준 업무를 '추론' 제안으로 덧붙임 (D8 — 기본 체크 해제)
-  for (const shape of shapes.values()) {
-    if (!shape.event_start) continue;
-    const schedule = computeSchedule({ eventStart: shape.event_start, today, funding: shape.funding, usesVendor: shape.usesVendor, params }, false);
-    const mentioned = new Set((tasksByProject.get(shape.key) ?? []).map((t) => t.template_key).filter(Boolean));
-    for (const def of templateFor({ funding: shape.funding, usesVendor: shape.usesVendor })) {
-      if (mentioned.has(def.key)) continue;
-      const s = schedule.tasks.find((x) => x.key === def.key)!;
-      pushTask(shape.key, shape, {
-        title: def.title, description: null, lead: def.lead, support: def.support, template_key: def.key, assignee_hint: null,
-        due: s.due, due_reason: s.reason, due_feasible: s.feasible, evidence: [],
-        inferred: true, inference_reason: `표준 업무 템플릿(지시서 5-2)${shape.funding.includes("student_fee") && ["OPS_EVIDENCE", "FIN_EVIDENCE"].includes(def.key) ? " — 학생회비 증빙 규칙" : ""}`,
-        confidence: 0.5,
-      });
-    }
-  }
+  // 표준 업무 템플릿을 업무로 덧붙이지 않는다(사용자 결정 2026-10-31 — 국서 역할은 판단 기준일 뿐, 회의록에 나온 일만 업무로).
+
   // 회의록 액션아이템이 빠짐없이 업무가 되었는지 확인 → 빠진 것은 회의록 근거 업무로 추가
-  const allTasksOf = (key: string | null) => [
-    ...rows.filter((r) => r.kind === "new_task" && r.project_key === key).map((r) => (r.payload as { title: string; template_key: string | null }) ),
-    ...(key ? shapes.get(key)?.existingTasks ?? [] : []),
-  ];
+  const textOf = (r: Row) => {
+    const p = r.payload as { title: string; description?: string | null; acceptance_criteria?: { text: string }[] };
+    return `${p.title} ${p.description ?? ""} ${(p.acceptance_criteria ?? []).map((c) => c.text).join(" ")}`;
+  };
   const onlyProject = shapes.size === 1 ? [...shapes.values()][0]! : null;
   for (const ai of input.actionItems ?? []) {
-    if (!ai.what?.trim() || !ai.department) continue;
+    if (!ai.what?.trim()) continue;
+    const dept = ai.department ?? guessDept(`${ai.what} ${ai.quote}`);
+    if (!dept) continue;
     const key = onlyProject?.key ?? null;
-    const tpl = guessTemplate(ai.what);
-    const fromMinutes = ai.due_date && ai.due_date >= today ? ai.due_date : null;
-    const sameAs = (x: { title: string; template_key: string | null }) => similarity(x.title, ai.what) >= 0.45 || Boolean(tpl && x.template_key === tpl && !/여러|버전|검토/.test(ai.what));
-    // 표준 템플릿으로 '추론' 추가된 업무가 회의록에 실제로 나오면 → 회의록 근거 업무로 올림(기본 체크, 근거 문단 표시)
-    const inferredRow = rows.find((r) => r.kind === "new_task" && r.project_key === key && r.inferred && sameAs(r.payload as { title: string; template_key: string | null }));
-    if (inferredRow) {
-      const pl = inferredRow.payload as Record<string, unknown>;
-      inferredRow.inferred = false;
-      inferredRow.inference_reason = null;
-      inferredRow.confidence = 0.8;
-      inferredRow.evidence = [{ para: ai.para, quote: ai.quote }] as Prisma.InputJsonValue;
-      if (fromMinutes) inferredRow.payload = { ...pl, due_date: fromMinutes, due_reason: `회의록에 명시된 기한(¶${ai.para})`, due_feasible: true } as Prisma.InputJsonValue;
-      continue;
-    }
-    const pool = allTasksOf(key);
-    const match = pool.some(sameAs) || covered.some((c) => similarity(c, ai.what) >= 0.6);
+    const tpl = guessTemplate(ai.what, dept);
+    const mine = rows.filter((r) => r.kind === "new_task" && r.project_key === key);
+    const existingTasks = key ? shapes.get(key)?.existingTasks ?? [] : [];
+    // 같은 국서·같은 결과물(업무 종류)이면 하나의 업무로 본다 — 세부 문장은 그 업무의 설명·체크리스트에 담긴다
+    const covers = (text: string, title: string, template: string | null, lead: string | null | undefined) =>
+      similarity(title, ai.what) >= 0.45 || contains(text, ai.what) >= 0.6 || Boolean(tpl && (template ?? guessTemplate(title, lead)) === tpl);
+    const match =
+      mine.some((r) => {
+        const p = r.payload as { title: string; template_key: string | null; lead_department: string };
+        return covers(textOf(r), p.title, p.template_key, p.lead_department);
+      }) ||
+      existingTasks.some((x) => covers(x.title, x.title, x.template_key, x.lead)) ||
+      covered.some((c) => similarity(c, ai.what) >= 0.6);
     if (match) continue;
+    const fromMinutes = ai.due_date && ai.due_date >= today && (!onlyProject?.event_start || ai.due_date <= onlyProject.event_start) ? ai.due_date : null;
     const sched = onlyProject?.event_start && tpl ? computeSchedule({ eventStart: onlyProject.event_start, today, funding: onlyProject.funding, usesVendor: onlyProject.usesVendor, params }, false).tasks.find((x) => x.key === tpl) : undefined;
+    const tplFree = tpl && key && !existingTasks.some((x) => x.template_key === tpl) && !mine.some((r) => (r.payload as { template_key?: string | null }).template_key === tpl) ? tpl : null;
     pushTask(key, onlyProject, {
-      title: ai.what.slice(0, 150), description: null, lead: ai.department, support: [], template_key: null, assignee_hint: null,
+      title: ai.what.slice(0, 150), description: null, lead: dept, support: [], template_key: tplFree, assignee_hint: null,
       due: fromMinutes ?? sched?.due ?? null,
       due_reason: fromMinutes ? `회의록에 명시된 기한(¶${ai.para})` : sched?.reason ?? null,
       due_feasible: fromMinutes ? true : sched?.feasible ?? true,

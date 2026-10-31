@@ -28,6 +28,9 @@ async function applyTemplate(page: Page) {
   await page.getByRole("button", { name: "표준 업무 만들기" }).click();
   const d = page.getByRole("dialog", { name: "표준 업무 만들기" });
   await expect(d.getByRole("list", { name: "표준 업무 목록" }).getByRole("listitem")).not.toHaveCount(0);
+  // 자동으로 고르지 않는다(사용자 결정: 국서 역할 목록은 업무로 자동 생성하지 않음) → 직접 '모두 선택'
+  await expect(d.getByRole("button", { name: /건 만들기$/ })).toBeDisabled();
+  await d.getByRole("button", { name: "모두 선택" }).click();
   await d.getByRole("button", { name: /건 만들기$/ }).click();
   await expect(d).toBeHidden();
 }

@@ -97,9 +97,9 @@ function TemplateDialog({ projectId, view }: { projectId: string; view: ProjectS
   const [pending, setPending] = useState(false);
   if (candidates.length === 0) return <span className="self-center text-xs text-muted">표준 업무가 모두 만들어져 있습니다.</span>;
   return (
-    <Dialog.Root open={open} onOpenChange={(o) => (setOpen(o), setError(null), o && setPicked(candidates.map((c) => c.key)))}>
+    <Dialog.Root open={open} onOpenChange={(o) => (setOpen(o), setError(null), o && setPicked([]))}>
       <Dialog.Trigger asChild>
-        <Button size="sm"><Wand2 className="h-4 w-4" /> 표준 업무 만들기</Button>
+        <Button size="sm" variant="secondary"><Wand2 className="h-4 w-4" /> 표준 업무 만들기</Button>
       </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/30" />
@@ -109,8 +109,12 @@ function TemplateDialog({ projectId, view }: { projectId: string; view: ProjectS
             <Dialog.Close className="rounded-md p-1 hover:bg-bg" aria-label="닫기"><X className="h-5 w-5" /></Dialog.Close>
           </div>
           <Dialog.Description className="mb-3 text-sm text-muted">
-            재원·외부업체 여부에 맞는 표준 업무입니다. 마감은 행사일에서 거꾸로 계산한 <strong>제안</strong> 값으로 들어가며, 나중에 고치면 확정됩니다.
+            국서 역할을 바탕으로 한 <strong>참고용</strong> 표준 업무 목록입니다. 자동으로 만들지 않으며, 필요한 것만 직접 골라 만드세요(보통은 회의록 AI 제안이나 국서 공간의 “업무 추가”를 씁니다). 마감은 행사일에서 거꾸로 계산한 <strong>제안</strong> 값으로 들어가며, 나중에 고치면 확정됩니다.
           </Dialog.Description>
+          <div className="mb-2 flex justify-end gap-2 text-xs">
+            <button type="button" className="underline" onClick={() => setPicked(candidates.map((c) => c.key))}>모두 선택</button>
+            <button type="button" className="underline" onClick={() => setPicked([])}>모두 해제</button>
+          </div>
           <ul className="divide-y divide-border rounded-lg border border-border" aria-label="표준 업무 목록">
             {candidates.map((c) => (
               <li key={c.key} className="flex items-start gap-3 px-3 py-2 text-sm">

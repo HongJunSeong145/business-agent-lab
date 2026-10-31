@@ -26,7 +26,7 @@ const proj = (over: Partial<A2Output["projects"][number]> = {}): A2Output["proje
 });
 const task = (title: string, over: Partial<A2Output["tasks"][number]> = {}): A2Output["tasks"][number] => ({
   project_ref: "P1", title, description: null, lead_department: "planning", support_departments: [], template_key: null, assignee_hint: null,
-  due_date: null, inferred: false, inference_reason: null, evidence: [{ para: 4, quote: "기획안 작성하여 보고" }], confidence: 0.85, ...over,
+  due_date: null, due_basis: null, due_reason: null, checklist: [], inferred: false, inference_reason: null, evidence: [{ para: 4, quote: "기획안 작성하여 보고" }], confidence: 0.85, ...over,
 });
 const ACTIONS: ActionItem[] = [
   { department: "planning", what: "객단가·배급 방식 기획안 작성 보고", due_date: null, para: 4, quote: "기획국에서 기획안 작성하여 보고" },

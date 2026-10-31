@@ -9,7 +9,7 @@ config({ path: ".env", override: false, quiet: true });
 
 const { prisma } = await import("../lib/db");
 const { ensureBaseSetup, ensureInitialAdmin } = await import("../lib/setup/bootstrap");
-const { seedDemo, seedDemoContent } = await import("../lib/setup/demo");
+const { seedDemo, seedDemoContent, replaceDemoTemplateTasks } = await import("../lib/setup/demo");
 const { todayKst } = await import("../lib/clock");
 
 try {
@@ -25,6 +25,9 @@ try {
       console.log(`데모 데이터: 회원 ${d.users}명(로그인 ${d.loginEnabled ? "가능" : "불가 — SEED_DEMO_PASSWORD 미설정"}), 연락처 ${d.contacts}건, 사업·회의록 ${c.created ? "생성" : "건너뜀"}`);
     }
   }
+  // 예전 데모 데이터: 표준 업무 자동 생성분을 예시 업무로 교체(한 번만, 손대지 않은 것만)
+  const rd = await replaceDemoTemplateTasks(prisma);
+  if (rd.replaced) console.log(`데모 사업의 자동 표준 업무 ${rd.replaced}건을 예시 업무로 바꿨습니다.`);
 } finally {
   await prisma.$disconnect();
 }

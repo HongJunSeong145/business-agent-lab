@@ -89,7 +89,7 @@ export async function getPlan(db: Db, actor: ActorT, projectId: string) {
   });
   const approved = plan?.versions.find((v) => v.approved_at);
   // 기획국 '기획안 초안 작성' 업무의 AI 레퍼런스 기획안(양식으로 가져오기)
-  const draftTask = await db.task.findFirst({ where: { project_id: p.id, template_key: "PLN_DRAFT", deleted_at: null }, select: { id: true } });
+  const draftTask = await planDraftTask(db, p.id);
   const aiDrafts = draftTask
     ? await db.referenceItem.findMany({ where: { task_id: draftTask.id, deleted_at: null, origin: "ai_generated", NOT: { points: { equals: Prisma.DbNull } } }, orderBy: { created_at: "desc" }, take: 3 })
     : [];
@@ -310,7 +310,7 @@ export function planToText(f: PlanFields): string {
 export async function requestPlanReferences(db: Db, actor: ActorT, projectId: string, raw: unknown) {
   if (!canEdit(actor)) throw new ServiceError("기획안 레퍼런스는 기획국과 회장·국장만 의뢰할 수 있습니다.", 403);
   const p = await loadProject(db, actor.termId, projectId);
-  let task = await db.task.findFirst({ where: { project_id: p.id, template_key: "PLN_DRAFT", deleted_at: null }, select: { id: true } });
+  let task = await planDraftTask(db, p.id);
   if (!task) {
     const planning = await db.department.findFirstOrThrow({ where: { term_id: actor.termId, code: "planning" } });
     const { insertTaskTx, parseTask } = await import("./tasks");
@@ -319,4 +319,21 @@ export async function requestPlanReferences(db: Db, actor: ActorT, projectId: st
   const { requestReferences } = await import("./references");
   const instruction = typeof (raw as { instruction?: unknown } | null)?.instruction === "string" ? (raw as { instruction: string }).instruction : "";
   return { taskId: task.id, ...(await requestReferences(db, actor, task.id, { instruction: instruction || "회의록을 바탕으로 이 행사의 기획안을 쓸 때 참고할 사례 사이트와 레퍼런스 기획안을 만들어 주세요.", useMinutes: true, usePlan: true })) };
+}
+
+/**
+ * 이 사업의 '기획안 작성' 업무 — 끝나지 않은 것 중 가장 최근 것(예전 업무보다 최근 회의록으로 만든 업무 우선).
+ * 표준 키(PLN_DRAFT)가 없어도 기획국 주관 '기획안' 업무면 찾는다.
+ */
+export async function planDraftTask(db: Db | Tx, projectId: string) {
+  const rows = await db.task.findMany({
+    where: {
+      project_id: projectId, deleted_at: null, status: { not: "cancelled" },
+      OR: [{ template_key: "PLN_DRAFT" }, { template_key: null, title: { contains: "기획안" }, departments: { some: { role: "lead", department: { code: "planning" } } } }],
+    },
+    orderBy: [{ is_completed: "asc" }, { created_at: "desc" }],
+    select: { id: true },
+    take: 1,
+  });
+  return rows[0] ?? null;
 }
