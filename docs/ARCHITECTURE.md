@@ -2,7 +2,7 @@
 
 > 상위 지시서: `docs/KGB_Agent_MasterPrompt.md` (이하 "지시서").
 > 이 문서는 지시서 PART 3·6·10을 현재 저장소 환경에 맞춰 구체화한 것이다. 설계 결정의 근거는 `docs/DECISIONS.md`(ADR 번호로 참조), 테이블 정의는 `docs/DATA_MODEL.md`.
-> 상태: **초안 v0.1 — 사용자 승인 전까지 코드 작성 금지**
+> 상태: **v1.0 — Phase 0 사용자 결정 반영(2026-10-31)**
 
 ---
 
@@ -21,7 +21,7 @@
 | 앱용 LLM 키 | 앱이 사용할 `ANTHROPIC_API_KEY` 없음 | 개발·테스트는 `AI_PROVIDER=mock`, 실제 AI 검증(Phase 5~7)에는 사용자 키 필요 |
 | 네트워크 | npm 레지스트리 접근 가능 | 패키지 설치 가능 |
 
-> 기존 Markdown 3개는 KGB_Agent와 무관한 소개 문서다. **건드리지 않는다**(지시서 0-2). 앱 코드를 저장소 루트에 둘지, 하위 폴더에 둘지는 미결정 사항 N1로 사용자 확인.
+> 기존 Markdown 3개는 KGB_Agent와 무관한 소개 문서다. **건드리지 않는다**(지시서 0-2). 앱 코드는 저장소 루트에 둔다(사용자 결정 N1, ADR-019).
 
 ---
 
@@ -97,21 +97,21 @@ flowchart TB
 | 폼·검증 | zod (입력·AI 출력 공통), react-hook-form | |
 | DB | PostgreSQL 16 | |
 | ORM | Prisma | 부분 고유 인덱스·생성 컬럼·CHECK 제약은 SQL 마이그레이션으로 보강 (ADR-006) |
-| 인증 | **자체 DB 세션 + 초대 가입** (Auth.js 대신) | 지시서 10-3의 "유휴 7일 만료·비밀번호 변경 시 전체 세션 무효화"를 정확히 충족하기 위함 — ADR-004, **승인 필요** |
+| 인증 | Auth.js v5 Credentials + JWT(슬라이딩 7일, `session_version`으로 일괄 무효화) + 자체 초대 가입 | ADR-004 |
 | 비밀번호 해시 | argon2id (`@node-rs/argon2`) | |
 | 작업 큐 | pg-boss + `ai_jobs`(도메인 상태 기록) | ADR-005 |
-| 파일 저장 | `lib/storage` 추상화: `LocalStorage`(dev/test) / `S3Storage`(staging/prod, 서명 URL 10분) | |
+| 파일 저장 | `lib/storage` 추상화: `local`(dev/test) / `db`(개인용 배포 기본, Postgres bytea) / `s3`(확장) — 서명 URL 10분 | ADR-020 |
 | 텍스트 추출 | PDF: `unpdf`(pdf.js 기반) 우선 검토, `pdf-parse` 대안 / DOCX: `mammoth` / HWPX: ZIP+XML 파싱 / HWP: 최선 노력(`hwp.js` 계열 평가 후 결정) | Phase 2에서 샘플로 비교 후 확정 |
 | 날짜 | 규칙 엔진은 `YYYY-MM-DD` 문자열 ↔ 정수 일수 변환만 사용(시간대 무관), 표시·"오늘" 계산은 `Asia/Seoul` (`@date-fns/tz`) | ADR-009 |
 | LLM | `@anthropic-ai/sdk`, `lib/ai/provider.ts` 추상화, 모델은 `LLM_MODEL`(Agent별 덮어쓰기 `LLM_MODEL_<AGENT>`) | ADR-010 |
 | 테스트 | Vitest(단위·통합), Playwright(E2E), `@vitest/coverage-v8`(규칙 엔진 분기 100%) | |
-| 배포(스테이징) | Railway(web + worker + Postgres) + S3 호환 버킷 | Q8, 사용자 계정 필요 |
+| 배포 | **Render Blueprint**(`render.yaml`: web + Postgres, 워커는 web 내 inline 모드) / 대안 Railway(`Dockerfile`) | ADR-019, 사용자 계정 필요 |
 
 ---
 
 ## 4. 디렉터리 구조 (확정안)
 
-지시서 3-3을 따르되, 규칙 엔진을 워크스페이스 패키지로 분리한다. (루트 배치 여부는 N1)
+지시서 3-3을 따르되, 규칙 엔진을 워크스페이스 패키지로 분리한다.
 
 ```
 /
@@ -267,7 +267,7 @@ sequenceDiagram
 | 전체 로그인 필수 | Next.js `middleware.ts`에서 세션 쿠키 없으면 `/login` 리다이렉트(정적 자산·`/invite/*` 제외) + 서버 측 세션 검증 |
 | 초대 가입(72h) | `invitations`(토큰은 해시 저장, 1회용, 만료) |
 | 비밀번호 | argon2id, 최소 10자, `login_attempts`로 5회/15분 제한(계정+IP 기준) |
-| 세션 | `sessions` 테이블(토큰 해시), HttpOnly·Secure·SameSite=Lax, 유휴 7일 만료(`last_seen_at` 갱신), 비밀번호 변경 시 사용자 전체 세션 삭제 |
+| 세션 | Auth.js JWT 쿠키(HttpOnly·Secure·SameSite=Lax), maxAge 7일 + updateAge 1일(유휴 7일 만료), 비밀번호 변경 시 `session_version` 증가로 전체 세션 무효화 |
 | CSRF | Server Actions 기본 Origin 검사 + Route Handler는 Origin/Host 검사 |
 | 입력 검증 | 모든 서비스 진입점 zod |
 | AI HTML 목업 | `sandbox` iframe(`allow-scripts` 없음, `srcdoc`), 별도 CSP |
@@ -285,10 +285,10 @@ sequenceDiagram
 |---|---|---|---|---|
 | development | 로컬 Postgres(사용자 PC: Docker Compose / 이 컨테이너: 설치된 PG16) | `./storage` | `mock` 또는 실제 키 | |
 | test | 테스트 전용 DB(실행마다 초기화) | 임시 디렉터리 | `mock` 고정(픽스처) | |
-| staging | 스테이징 전용 DB | 스테이징 전용 버킷 | 실제 키(별도, 일 예산 상한) | 상단 노란 띠 "테스트 환경 — 실제 데이터 입력 금지", `staging:reset` |
+| staging (= 사용자 개인용 사이트) | 스테이징 전용 DB(Render Postgres) | `db` 드라이버 | 실제 키(별도, 일 예산 상한) 또는 `none` | 상단 노란 띠 "테스트 환경 — 실제 데이터 입력 금지", `staging:reset` |
 | production | 운영 DB | 운영 버킷 | 실제 키 | 파괴적 마이그레이션 자동 실행 금지 |
 
-환경변수(키 이름만, 값은 `.env.local`): `APP_ENV`, `DATABASE_URL`, `SESSION_SECRET`, `STORAGE_DRIVER`, `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `AI_PROVIDER`, `ANTHROPIC_API_KEY`, `LLM_MODEL`, `AI_DAILY_BUDGET_KRW`, `UPLOAD_MAX_MB`, `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD`(스테이징 초기 관리자 생성용, 배포 플랫폼에만 설정).
+환경변수(키 이름만, 값은 `.env.local`): `APP_ENV`, `DATABASE_URL`, `AUTH_SECRET`, `AUTH_URL`, `FILE_URL_SECRET`, `WORKER_MODE`, `STORAGE_DRIVER`, `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `AI_PROVIDER`, `ANTHROPIC_API_KEY`, `LLM_MODEL`, `AI_DAILY_BUDGET_KRW`, `UPLOAD_MAX_MB`, `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD`(스테이징 초기 관리자 생성용, 배포 플랫폼에만 설정).
 
 ---
 
