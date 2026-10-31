@@ -35,7 +35,7 @@ describe("AI 공급자 설정 (3-4, ADR-021)", () => {
     const p = createProvider({ APP_ENV: "staging", AI_PROVIDER: "none" });
     expect(p).toBeInstanceOf(NoneProvider);
     expect(p.available).toBe(false);
-    await expect(p.complete()).rejects.toBeInstanceOf(AiUnavailableError);
+    await expect(p.complete({ agent: "a1", system: "", prompt: "" })).rejects.toBeInstanceOf(AiUnavailableError);
   });
   it("mock 공급자는 픽스처로 결정적 응답", async () => {
     const p = createProvider({ APP_ENV: "test", AI_PROVIDER: "mock" }, { a1: '{"ok":true}' });
