@@ -235,7 +235,7 @@ export async function decideProposals(db: Db, actor: ActorT, raw: unknown) {
         if (!projectId) throw new ServiceError(`'${c.title}': 이 업무의 사업 제안을 함께 승인하세요.`);
       }
       const { guessTemplate } = await import("@/lib/ai/propose");
-      const tpl = guessTemplate(c.title);
+      const tpl = guessTemplate(c.title, c.lead_department);
       const tplFree = tpl && projectId ? !(await tx.task.count({ where: { project_id: projectId, template_key: tpl, deleted_at: null } })) : false;
       const v = parseTask({ title: c.title, project_id: projectId, lead_department_id: depts[c.lead_department], support_department_ids: c.support_departments.filter((d) => d !== c.lead_department).map((d) => depts[d]), due_date: c.due_date });
       await insertTaskTx(tx, actor, v, {

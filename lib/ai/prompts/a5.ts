@@ -1,6 +1,6 @@
 import { COUNCIL_RULES } from "./common";
 
-export const A5_PROMPT_VERSION = "a5-v2";
+export const A5_PROMPT_VERSION = "a5-v3";
 
 const ISOLATION = `
 [보안 규칙 — 반드시 지킬 것]
@@ -52,6 +52,7 @@ export function a5Prompt(i: A5Input): string {
 - 마감: ${i.task.due_date ?? "미정"}
 - 설명: ${i.task.description ?? "없음"}
 - 완료 기준: ${i.task.criteria.join(", ") || "없음"}
+- 수행 지표: 시스템 규칙의 [국서 역할] 중 ${i.task.department} 설명 — 예시안은 그 국서 결과물이 갖춰야 할 수준(항목·형식·쓰임새)을 채운다
 
 [사업]
 ${i.project ? `- ${i.project.title} / 행사일 ${i.project.event_start ?? "미정"} / 장소 ${i.project.venue ?? "미정"} / 재원 ${i.project.funding.join(", ") || "미정"} / 수혜 인원 ${i.project.beneficiaries ?? "미정"}` : "사업 외 업무"}
@@ -59,7 +60,7 @@ ${i.project ? `- ${i.project.title} / 행사일 ${i.project.event_start ?? "미�
 [작업자 지시]
 ${i.instruction ?? "없음"}
 
-[참고 자료] ${i.plan ? `기획안 v${i.plan.versionNo}${i.plan.isDraft ? "(초안 기준 — 결재 전)" : "(결재본)"}` : "기획안 없음"} · ${i.hasMeeting ? "회의록 분석 있음" : "회의록 없음"} · 과거 유사 작업물 ${i.pastWorkCount}건
+[참고 자료] ${i.plan ? `기획안 v${i.plan.versionNo}${i.plan.isDraft ? "(초안 기준 — 결재 전)" : "(결재본 — 가장 중요한 기준)"}` : "기획안 없음"} · ${i.hasMeeting ? "이 사업의 가장 최근 회의록 분석 있음(이전 회의록과 다르면 최근 회의록이 우선)" : "회의록 없음"} · 과거 유사 작업물 ${i.pastWorkCount}건
 ${i.searchFailed ? "[주의] 외부 레퍼런스 검색에 실패했다. references 는 빈 배열로 두고, 내부 자료만으로 예시안을 만들며 notes 에 '외부 레퍼런스 검색 실패'를 적는다." : `[검색 결과] <document name="검색 결과"> 의 출처 ${i.sourceCount}개(S1~S${i.sourceCount}).`}
 
 [작성 규칙]
@@ -68,6 +69,7 @@ ${i.searchFailed ? "[주의] 외부 레퍼런스 검색에 실패했다. referen
 3. 예시안은 기획안·회의록의 사실(일시·장소·예산·인원)을 그대로 쓰고, 모르는 값은 [ ] 로 비워 둔다. 지어내지 않는다.${i.plan?.isDraft ? " 기획안이 초안이므로 예시안 첫 줄에 '※ 기획안 초안 기준'을 적는다." : ""}
 4. 외부로 보내는 문안(이메일·공문·제휴 요청)은 external_send=true.
 5. plan_draft: ${i.task.deptCode === "planning" ? "기획국 업무이므로 반드시 채운다 — 회의록·검색 사례를 근거로 한 '레퍼런스 기획안'(행사명·행사 날짜·일시·장소·예산·주최·주관·배경 및 목적·행사 내용·타임테이블). 모르는 값은 빈 문자열 또는 null, 지어내지 않는다." : "기획국 업무가 아니므로 null."}
-6. notes: 사용한 자료와 한계(검색 실패, 확인 필요한 값 등)를 한두 문장으로.
-7. 한국어로 쓴다.`;
+6. 우선순위: 결재 기획안 > 가장 최근 회의록 > 이전 회의록·과거 작업물. 서로 다르면 앞의 것을 따른다.
+7. notes: 사용한 자료와 한계(검색 실패, 확인 필요한 값 등)를 한두 문장으로.
+8. 한국어로 쓴다.`;
 }

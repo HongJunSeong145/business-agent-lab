@@ -121,7 +121,56 @@ const DEMO_MINUTES = [
 ];
 
 /**
- * 체험용 데모 내용: 사업 2개(학생회비 간식 나눔 / 교비 축제) + 표준 업무 + 회의록 2건(추출 완료 상태).
+ * 데모 사업의 예시 업무 — 사용자가 알려 준 승인요청 패턴(회의록에서 나온 일을 국서별로, 마감은 행사일에서 역산).
+ * 국서 역할 목록(표준 업무 템플릿)을 그대로 업무로 넣지 않는다(사용자 결정 2026-10-31).
+ */
+const DEMO_TASKS: Record<string, { dept: string; title: string; description: string; due: string; reason: string; criteria: string[] }[]> = {
+  "[데모] 기말고사 간식 나눔": [
+    { dept: "planning", title: "간식 나눔 기획안 작성(여러 버전)", description: "객단가·배급 방식(선착순 등)을 정하고, 오프라인 홍보물 비용만큼 간식을 덜 나누더라도 홍보를 늘리는 안과 비교한 여러 버전으로 작성.", due: "2026-11-19", reason: "역산: 홍보물이 행사 10일 전(11/29)쯤 나오려면 기획안은 11/19까지", criteria: ["객단가·배급 방식 결정", "온라인 전용 vs 오프라인 홍보 포함 버전 비교", "예산 40만 원 안에서 버전별 수량·비용"] },
+    { dept: "promotion", title: "간식 나눔 홍보물 작업 정리·제작(기획안 기준)", description: "결재 기획안에 맞춰 필요한 홍보물 작업을 스스로 판단해 투두리스트로 옮기고 제작.", due: "2026-11-29", reason: "역산: 게시 기간을 두려면 행사 10일 전 완성", criteria: ["기획안 기준 홍보물 작업 목록", "시안 제작", "게시 일정"] },
+    { dept: "operations", title: "간식 나눔 당일 집행매뉴얼 작성", description: "행사 당일 인력 배치·배부 동선·준비물·비상 대응을 정리해 타 국서가 매뉴얼대로 움직이게 한다.", due: "2026-12-02", reason: "집행 매뉴얼: 늦어도 행사 7일 전", criteria: ["역할표·인력 배치", "배부 동선·시간표", "준비물 체크리스트", "비상 대응"] },
+    { dept: "finance", title: "간식 나눔 재정 준비(영수 처리·업체 정리·예산안)", description: "학생회비 사업: 영수증·이체내역 처리 준비, 간식 업체·가격 정리, 기획안의 간식 가격을 바탕으로 예산안 작성.", due: "2026-11-24", reason: "역산: 기획안(11/19) 확정 후 구입 전까지", criteria: ["영수증·이체내역 처리 준비", "간식 업체·가격 정리", "기획안 기반 예산안"] },
+  ],
+  "[데모] 연말 단과대 축제": [
+    { dept: "planning", title: "연말 축제 기획안 작성", description: "교비 사업: 행사 21일 전 행정실 송부를 위해 일시·장소·예산·프로그램·타임테이블을 담은 기획안 작성.", due: "2026-11-20", reason: "역산: 교비 행정실 송부(행사 21일 전, 11/27) 전 결재", criteria: ["프로그램·타임테이블", "예산(세금 10% 포함)", "외부업체 이용 범위"] },
+    { dept: "secretariat", title: "연말 축제 외부업체 견적·문의", description: "무대·음향 등 외부업체 후보에 견적을 요청하고 회신을 정리.", due: "2026-11-25", reason: "역산: 송부 전 업체 확정", criteria: ["업체 후보 목록", "견적 요청·회신 정리"] },
+  ],
+};
+
+/** 예전 데모 데이터(표준 업무 15건씩 자동 생성)를 예시 업무로 바꾼다 — 한 번만(손대지 않은 표준 업무만 지움) */
+export async function replaceDemoTemplateTasks(db: Db) {
+  const term = await ensureBaseSetup(db);
+  const marker = await db.setting.findUnique({ where: { term_id_key: { term_id: term.id, key: "DEMO_TASKS_V2" } } });
+  if (marker) return { replaced: 0 };
+  const projects = await db.project.findMany({ where: { term_id: term.id, deleted_at: null, OR: [{ is_demo: true }, { title: { startsWith: "[데모]" } }] } });
+  let replaced = 0;
+  const pres = await db.membership.findFirst({ where: { term_id: term.id, role: { in: ["president", "admin"] } } });
+  for (const p of projects) {
+    const r = await db.task.updateMany({
+      where: { project_id: p.id, deleted_at: null, template_key: { not: null }, source_proposal_id: null, is_completed: false, manual_progress: null, deliverables: { none: {} } },
+      data: { deleted_at: new Date() },
+    });
+    replaced += r.count;
+    if (pres) await addDemoTasks(db, { userId: pres.user_id, role: "president", departmentId: null, departmentCode: null, termId: term.id }, p.id, p.title);
+  }
+  await db.setting.create({ data: { term_id: term.id, key: "DEMO_TASKS_V2", value: true } });
+  return { replaced };
+}
+
+async function addDemoTasks(db: Db, actor: { userId: string; role: "president"; departmentId: null; departmentCode: null; termId: string }, projectId: string, title: string) {
+  const list = DEMO_TASKS[title];
+  if (!list) return;
+  const { createTask } = await import("@/lib/services/tasks");
+  const depts = Object.fromEntries((await db.department.findMany({ where: { term_id: actor.termId } })).map((d) => [d.code, d.id]));
+  for (const t of list) {
+    if (await db.task.count({ where: { project_id: projectId, title: t.title, deleted_at: null } })) continue;
+    const created = await createTask(db, actor, { title: t.title, description: t.description, project_id: projectId, lead_department_id: depts[t.dept], due_date: t.due, acceptance_criteria: t.criteria.map((text) => ({ text, done: false })) });
+    await db.task.update({ where: { id: created.id }, data: { due_state: "proposed", due_reason: t.reason, is_demo: true } });
+  }
+}
+
+/**
+ * 체험용 데모 내용: 사업 2개(학생회비 간식 나눔 / 교비 축제) + 예시 업무(국서별) + 회의록 2건(추출 완료 상태).
  * 이미 있으면 건너뛴다(사용자가 고친 내용을 지우지 않음).
  */
 export async function seedDemoContent(db: Db, today: string) {
@@ -131,7 +180,6 @@ export async function seedDemoContent(db: Db, today: string) {
   if (!presUser) return { created: false };
   const actor = { userId: presUser.id, role: "president" as const, departmentId: null, departmentCode: null, termId: term.id };
   const { createProject } = await import("@/lib/services/projects");
-  const { applyStandardTemplate } = await import("@/lib/services/schedule");
   const projects = [
     { title: "[데모] 기말고사 간식 나눔", event_start: "2026-12-09", venue: "데모관 로비", expected_beneficiaries: 80, host: "데모단과대학 학생회", organizer: "기획국", funding: [{ source: "student_fee", amount_planned: 400000 }] },
     { title: "[데모] 연말 단과대 축제", event_start: "2026-12-18", venue: "데모관 앞 광장", expected_beneficiaries: 500, uses_external_vendor: true, host: "데모단과대학 학생회", organizer: "기획국", funding: [{ source: "school", amount_planned: 3000000 }] },
@@ -139,7 +187,7 @@ export async function seedDemoContent(db: Db, today: string) {
   for (const p of projects) {
     const created = await createProject(db, actor, p);
     await db.project.update({ where: { id: created.id }, data: { is_demo: true } }).catch(() => undefined);
-    await applyStandardTemplate(db, actor, created.id, undefined, today);
+    await addDemoTasks(db, actor, created.id, p.title);
   }
   for (const m of DEMO_MINUTES) {
     await db.meeting.create({
@@ -149,5 +197,7 @@ export async function seedDemoContent(db: Db, today: string) {
       },
     });
   }
+  await db.setting.upsert({ where: { term_id_key: { term_id: term.id, key: "DEMO_TASKS_V2" } }, update: {}, create: { term_id: term.id, key: "DEMO_TASKS_V2", value: true } });
+  void today;
   return { created: true };
 }

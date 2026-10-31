@@ -1,17 +1,30 @@
 import { TEMPLATES, type TemplateKey } from "@kgb/rules";
 import { COUNCIL_RULES, DATA_ISOLATION } from "./common";
 
-export const A2_PROMPT_VERSION = "a2-v3";
+export const A2_PROMPT_VERSION = "a2-v4";
 
-export const A2_SYSTEM = `너는 학생회 회의록 분석 결과로 사업과 국서별 업무를 제안하는 기획 보조다.${DATA_ISOLATION}${COUNCIL_RULES}`;
+export const A2_SYSTEM = `너는 학생회 회의록 분석 결과로 사업과 국서별 업무를 제안하는 기획 보조다. 회의록을 단계적으로 꼼꼼히 읽고, 한 번에 빠짐없이 정확하게 제안한다(다시 분석하는 데도 비용이 든다).${DATA_ISOLATION}${COUNCIL_RULES}`;
+
+/**
+ * 사용자가 직접 알려 준 승인요청 패턴(2026-10-31, 기말고사 간식행사 회의록).
+ * 국서 역할 목록을 업무로 옮기는 것이 아니라, 회의록에서 나온 일을 국서별로 묶고 마감을 거꾸로 계산하는 방식의 예시다.
+ */
+const PATTERN_EXAMPLE = `[예시 — 이런 패턴으로 제안한다(내용은 회의록마다 다르다)]
+회의록 요지: "기말고사 간식행사 12월 7일, 학생회비, 예산 100만 원 / 객단가·배급 방식(선착순 등)은 기획국에서 기획안 작성해 보고 / 행사당일 집행매뉴얼 작성요망 / 홍보물 제작은 행사 1주일 전 안에 마무리 / 홍보물을 온라인으로만 할지 의견 — 기획국이 예산 범위에서 검토해 기획안 여러 버전으로 올릴 것"
+→ 업무(국서별):
+- 기획국: "간식행사 기획안 작성(여러 버전)" — 마감 11/17 (due_basis=reasoned, due_reason="홍보물이 행사 10일 전(11/27)쯤 나와야 하므로, 홍보물 제작 기간 약 10일을 빼고 11/17까지 기획안 마무리"). 설명: 객단가·배급 방식(선착순 등)을 정하고, 오프라인 홍보물을 만들면 그 비용만큼 간식을 덜 나누더라도 더 많은 홍보가 나은지 비교하는 여러 버전으로 작성. checklist: ["객단가·배급 방식 결정", "온라인 전용 vs 오프라인 홍보 포함 버전 비교", "예산 100만 원 안에서 버전별 수량·비용"]
+- 홍보국: "간식행사 홍보물 작업 정리·제작(기획안 기준)" — 마감 11/27 (reasoned: "회의록 상한은 행사 1주일 전(11/30), 게시 기간을 두려면 10일 전 완성"). 설명: 결재 기획안에 맞춰 필요한 홍보물 작업을 스스로 판단해 투두리스트로 옮기고 제작.
+- 집행국: "간식행사 당일 집행매뉴얼 작성" — 회의록 "행사당일 집행매뉴얼 작성요망". 마감은 근거가 없으면 null(규칙 엔진이 행사 7일 전으로 계산). checklist: ["역할표·인력 배치", "배부 동선·시간표", "준비물 체크리스트", "비상 대응"]
+- 재정국: "간식행사 재정 준비(영수 처리·업체 정리·예산안)" — 학생회비 사업이므로 영수 처리 준비, 간식 업체·가격 정리, 기획안의 간식 가격을 바탕으로 예산안 작성. checklist: ["영수증·이체내역 처리 준비", "간식 업체·가격 정리", "기획안 기반 예산안"]
+- 사무국: 회의록에 사무국이 할 일이 없으므로 업무를 만들지 않는다.`;
 
 export function a2Prompt(input: {
   meetingDate: string;
   summaryJson: string;
   projects: { id: string; title: string; event_start: string | null; tasks: string[] }[];
 }): string {
-  const templates = (Object.keys(TEMPLATES) as TemplateKey[]).map((k) => `${k}: ${TEMPLATES[k].title} (주관 ${TEMPLATES[k].lead})`).join("\n");
-  return `회의록 분석 결과(A1)를 바탕으로 사업과 업무를 제안해 submit_result 로 제출하라. 회의일: ${input.meetingDate}
+  const templates = (Object.keys(TEMPLATES) as TemplateKey[]).map((k) => `${k}: ${TEMPLATES[k].title}`).join("\n");
+  return `회의록 분석 결과(A1)를 바탕으로 사업과 국서별 업무를 제안해 submit_result 로 제출하라. 회의일: ${input.meetingDate}
 
 [A1 분석 결과]
 ${input.summaryJson}
@@ -19,18 +32,25 @@ ${input.summaryJson}
 [기존 사업 — 같은 사업이면 새로 만들지 말고 existing_project_id 를 넣는다]
 ${input.projects.length ? input.projects.map((p) => `- id=${p.id} | ${p.title} | ${p.event_start ?? "날짜 미정"} | 기존 업무: ${p.tasks.join(", ") || "없음"}`).join("\n") : "없음"}
 
-[표준 업무 템플릿 — 업무가 이 중 하나에 해당하면 template_key 를 넣는다]
+[업무 분류 키 — 업무가 아래 중 하나와 같은 종류일 때만 template_key 에 넣는다(마감 계산용 분류일 뿐, 이 목록의 업무를 새로 만들지 않는다)]
 ${templates}
 
+${PATTERN_EXAMPLE}
+
+[생각하는 순서]
+1. 회의록에서 사업(행사)을 찾고 행사일·재원·예산·장소를 확인한다.
+2. 회의록의 모든 문장에서 '누군가 해야 할 일'을 찾는다: A1 action_items 전부 + "~작성요망", "~필요", "~할 것", "~해 올릴 것", "~했으면 좋겠음", "~검토", "~보고", "~마무리" 문장. 주어가 없으면 [국서 역할]로 맡을 국서를 정한다(예: 집행 매뉴얼 → 집행국, 홍보물 → 홍보국, 기획안 → 기획국, 영수 처리·업체·예산안 → 재정국).
+3. 같은 국서의 같은 결과물에 대한 문장은 업무 하나로 묶고, 세부 항목은 checklist 에 넣는다. 서로 다른 결과물은 따로 둔다.
+4. 업무 사이 선후관계(기획안 → 홍보물·집행 매뉴얼·예산안)를 보고, 행사일에서 거꾸로 마감을 정한다.
+5. 빠진 것이 없는지 회의록 문단을 처음부터 다시 훑어 확인한 뒤 제출한다.
+
 [작성 규칙]
-1. projects: 회의에서 다룬 행사·사업. 기존 사업과 제목·날짜·장소가 비슷하면 existing_project_id 를 넣는다. ref 는 "P1","P2"처럼 짓는다.
-2. tasks: 회의록에 근거가 있는 업무만 inferred=false 로 넣고 evidence(문단 번호·원문 인용)를 단다. **빠뜨리지 않는다**:
-   - A1 의 action_items 는 하나도 빠짐없이 각각 업무로 넣는다.
-   - 회의록 문장 중 "~작성요망", "~필요", "~할 것", "~해 올릴 것", "~했으면 좋겠음", "~검토", "~보고" 처럼 누군가 해야 할 일을 말하는 문장은 모두 업무로 넣는다(주어가 없으면 학생회 규칙으로 맡을 국서를 정한다 — 예: 집행 매뉴얼 → 집행국, 홍보물 → 홍보국, 기획안 → 기획국, 구입 → 재정국).
-   - 기존 사업의 업무와 같은 일이면 기존 업무 제목을 그대로 쓰거나 같은 template_key 를 넣어 연결한다(코드가 중복 없이 연결하고, 회의록에 다른 기한이 있으면 마감 변경으로 올린다).
-3. 회의록에 없지만 학생회 관행상 꼭 필요한 업무를 덧붙일 때만 inferred=true, inference_reason 에 근거 규칙을 쓴다(표준 템플릿 업무는 코드가 따로 채우므로 굳이 추론하지 않아도 된다).
-4. 국서 배정: lead_department 는 정확히 1개, 협조는 support_departments. 담당자(사람)는 국장이 정하므로 추천하지 않는다 — assignee_hint 는 항상 null.
-5. due_date 는 회의록에 명시된 기한만. 없으면 null(규칙 엔진이 계산).
-6. project_ref: 이 회의의 사업이면 projects[].ref, 기존 사업이면 그 id, 사업과 무관한 업무면 null.
-7. 확신도(confidence)를 0~1 로 솔직하게 매긴다.`;
+1. projects: 회의에서 다룬 행사·사업. 기존 사업과 같은 사업이면 existing_project_id 를 넣는다. 제목이 '[데모]'로 시작하는 기존 사업은 체험용 가상 데이터이므로, 회의록 제목에도 '[데모]'가 없으면 연결하지 않는다. ref 는 "P1","P2"처럼 짓는다.
+2. tasks: 회의록에 근거가 있는 업무는 inferred=false 와 evidence(문단 번호·원문 인용)를 단다. [국서 역할] 목록을 그대로 업무로 만들지 않는다 — 회의록에 그 국서가 할 일이 없으면 그 국서 업무는 만들지 않는다. 회의록에 없지만 회의 결정을 실행하려면 반드시 필요한 일만 inferred=true, inference_reason 에 이유.
+3. title: "사업 핵심어 + 결과물 + 동사"로 짧고 구체적으로(예: "간식행사 당일 집행매뉴얼 작성"). description: 회의록에서 나온 조건·쟁점·결정(금액·방식·비교할 안 등)을 국장이 바로 일할 수 있게 2~4문장으로.
+4. 기존 사업의 업무와 같은 일이면 기존 업무 제목을 그대로 쓴다(코드가 중복 없이 연결하고, 회의록 기한이 다르면 마감 변경으로 올린다).
+5. 국서 배정: lead_department 는 정확히 1개, 함께 일할 국서는 support_departments. 담당자(사람)는 국장이 정하므로 assignee_hint 는 항상 null.
+6. 마감: 회의록에 적힌 기한이면 due_basis="minutes". 회의록의 행사일·선후관계로 거꾸로 계산했으면 due_basis="reasoned" 와 due_reason 에 계산 근거. 근거 없이 날짜를 지어내지 않는다 — 모르면 due_date·due_basis·due_reason 모두 null. 마감은 회의일 이후, 행사일 이전이어야 한다. "행사 1주일 전" 같은 표현은 행사일에서 빼서 계산한다.
+7. project_ref: 이 회의의 사업이면 projects[].ref, 기존 사업이면 그 id, 사업과 무관한 업무면 null.
+8. 확신도(confidence)를 0~1 로 솔직하게 매긴다.`;
 }

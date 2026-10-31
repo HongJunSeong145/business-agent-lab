@@ -18,7 +18,7 @@ type Item = {
 };
 type Req = {
   id: string; status: "queued" | "running" | "done" | "failed"; instruction: string | null; by: string | null; at: string; error: string | null;
-  outdated: boolean; options: { useMinutes?: boolean; usePlan?: boolean; usePastWork?: boolean };
+  outdated: boolean; staleMeeting?: boolean; options: { useMinutes?: boolean; usePlan?: boolean; usePastWork?: boolean };
   snapshot: { meeting?: { title: string; analysisVersion: number } | null; plan?: { versionNo: number; isDraft: boolean } | null; pastWork?: { title: string }[]; searchFailed?: boolean; searchNote?: string; notes?: string } | null;
 };
 type Data = {
@@ -97,6 +97,27 @@ export function ReferencesTab({ taskId, onChanged }: { taskId: string; onChanged
               </p>
               {r.snapshot?.searchNote ? <p className={cn("text-xs", r.snapshot.searchFailed ? "text-warning-text" : "text-muted")}>{r.snapshot.searchNote}</p> : null}
               {r.error ? <p className="text-xs text-danger">{r.error}</p> : null}
+              {r.staleMeeting && data.context.meeting ? (
+                <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-warning-text" data-testid="reference-stale-meeting">
+                  예전 회의록({r.snapshot?.meeting?.title})으로 만든 결과입니다. 최신 회의록: {data.context.meeting.title}
+                  {data.canAdd && data.aiAvailable && !pending ? (
+                    <button
+                      className="rounded border border-warning px-1.5 py-0.5 underline"
+                      onClick={async () => {
+                        try {
+                          await api(`/api/tasks/${taskId}/references/request`, { body: { instruction: r.instruction ?? "", useMinutes: true, usePlan: r.options.usePlan ?? true, usePastWork: r.options.usePastWork ?? false } });
+                          toast("최신 회의록 기준으로 다시 만드는 중입니다.");
+                          await after();
+                        } catch (e) {
+                          toast((e as Error).message, { tone: "error" });
+                        }
+                      }}
+                    >
+                      최신 회의록으로 다시 만들기
+                    </button>
+                  ) : null}
+                </p>
+              ) : null}
               {r.outdated && data.approvedPlan ? (
                 <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-warning-text" data-testid="reference-outdated">
                   결재 기획안 v{data.approvedPlan.versionNo} 이전 자료로 만든 결과입니다.

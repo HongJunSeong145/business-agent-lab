@@ -276,7 +276,8 @@ export async function linkTemplateDependencies(tx: Tx, termId: string, projectId
     if (!def) continue;
     const deps = [...def.deps, ...(def.key === "FIN_PURCHASE" && project.uses_external_vendor ? [{ key: "VENDOR_CONFIRM" as const, type: "finish_to_start" as const }] : [])];
     for (const d of deps) {
-      const pre = byKey.get(d.key);
+      // '기획안 결재' 업무가 따로 없으면 '기획안 작성' 업무를 선행으로(결재 시 완료 처리되므로 D7 차단·해제가 그대로 동작)
+      const pre = byKey.get(d.key) ?? (d.key === "PLN_APPROVAL" && r.template_key !== "PLN_DRAFT" ? byKey.get("PLN_DRAFT") : undefined);
       if (!pre || has.has(`${r.id}>${pre}`)) continue;
       await tx.taskDependency.create({ data: { task_id: r.id, depends_on_task_id: pre, type: d.type } });
       has.add(`${r.id}>${pre}`);

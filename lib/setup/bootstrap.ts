@@ -42,8 +42,10 @@ export async function ensureBaseSetup(db: Db, today = new Date()) {
     });
   }
 
-  // 하루 AI 예산 기본값 변경(3,000 → 10,000원, 사용자 결정 2026-11-01): 예전 기본값 그대로인 DB 만 올린다
-  await db.setting.updateMany({ where: { term_id: term.id, key: "AI_DAILY_BUDGET_KRW", value: { equals: 3000 } }, data: { value: 10000 } });
+  // 하루 AI 예산 기본값 변경(3,000 → 10,000 → 30,000원, 사용자 결정): 예전 기본값 그대로인 DB 만 올린다(사용자가 직접 정한 다른 값은 그대로)
+  for (const old of [3000, 10000]) {
+    await db.setting.updateMany({ where: { term_id: term.id, key: "AI_DAILY_BUDGET_KRW", value: { equals: old } }, data: { value: 30000 } });
+  }
 
   // Phase 4 이전에 설치된 DB: 휴일 목록이 비어 있으면 기본 공휴일을 채운다(사용자가 넣은 값은 건드리지 않음)
   const holidays = await db.setting.findUnique({ where: { term_id_key: { term_id: term.id, key: "HOLIDAYS" } } });

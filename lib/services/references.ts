@@ -102,20 +102,36 @@ export async function deleteReference(db: Db, actor: ActorT, id: string) {
 }
 
 /** 업무와 연결된 회의록(업무를 만든 제안의 회의록 → 같은 사업 업무의 회의록 순) */
+/**
+ * 업무가 참고할 회의록 = 그 사업과 연결된 회의록 중 **가장 최근 회의**(회의일 → 올린 시각 순).
+ * 사용자 지적(2026-10-31): 업무를 처음 만든 예전 회의록으로 레퍼런스를 만들던 문제 → 사업에 연결된 최신 회의록을 쓴다.
+ * 연결: 그 사업을 만든 회의록, 그 사업·업무를 대상으로 한 회의록 제안(대기·승인 모두), 업무 자신의 출처 제안.
+ */
 export async function meetingForTask(db: Db | Tx, task: { source_proposal_id: string | null; project_id: string | null }) {
-  const proposalIds: string[] = [];
-  if (task.source_proposal_id) proposalIds.push(task.source_proposal_id);
+  const meetingIds = new Set<string>();
+  if (task.source_proposal_id) {
+    const p = await db.proposal.findUnique({ where: { id: task.source_proposal_id }, select: { source_type: true, source_id: true } });
+    if (p?.source_type === "meeting" && p.source_id) meetingIds.add(p.source_id);
+  }
   if (task.project_id) {
-    const siblings = await db.task.findMany({ where: { project_id: task.project_id, source_proposal_id: { not: null } }, select: { source_proposal_id: true }, orderBy: { created_at: "desc" }, take: 20 });
-    proposalIds.push(...siblings.map((s) => s.source_proposal_id!));
+    const project = await db.project.findUnique({ where: { id: task.project_id }, select: { created_from_meeting_id: true, tasks: { select: { id: true } } } });
+    if (project?.created_from_meeting_id) meetingIds.add(project.created_from_meeting_id);
+    const ids = [task.project_id, ...(project?.tasks.map((t) => t.id) ?? [])];
+    const props = await db.proposal.findMany({
+      where: { source_type: "meeting", source_id: { not: null }, status: { in: ["pending", "approved", "edited_approved"] }, OR: [{ project_key: task.project_id }, { target_id: { in: ids } }] },
+      select: { source_id: true },
+      distinct: ["source_id"],
+    });
+    for (const p of props) meetingIds.add(p.source_id!);
   }
-  for (const pid of proposalIds) {
-    const p = await db.proposal.findUnique({ where: { id: pid }, select: { source_type: true, source_id: true } });
-    if (p?.source_type !== "meeting" || !p.source_id) continue;
-    const m = await db.meeting.findFirst({ where: { id: p.source_id, deleted_at: null }, include: { analyses: { orderBy: { version: "desc" }, take: 1 } } });
-    if (m?.analyses[0]) return { meetingId: m.id, title: m.title, analysisId: m.analyses[0].id, analysisVersion: m.analyses[0].version, summary: m.analyses[0].summary };
-  }
-  return null;
+  if (!meetingIds.size) return null;
+  const m = await db.meeting.findFirst({
+    where: { id: { in: [...meetingIds] }, deleted_at: null, analyses: { some: {} } },
+    orderBy: [{ meeting_date: "desc" }, { created_at: "desc" }],
+    include: { analyses: { orderBy: { version: "desc" }, take: 1 } },
+  });
+  if (!m?.analyses[0]) return null;
+  return { meetingId: m.id, title: m.title, analysisId: m.analyses[0].id, analysisVersion: m.analyses[0].version, summary: m.analyses[0].summary };
 }
 
 /** 과거 유사 업무의 완료 작업물(같은 표준 업무 또는 같은 주관 국서·비슷한 제목) */
@@ -204,6 +220,16 @@ export async function listReferences(db: Db, actor: ActorT, taskId: string, avai
   const outdatedReq = new Set(
     requests.filter((r) => r.status === "done" && approvedVersionId && (r.context_snapshot as { plan?: { versionId?: string } | null } | null)?.plan?.versionId !== approvedVersionId).map((r) => r.id),
   );
+  // 더 최근 회의록이 생겼는데 예전 회의록으로 만든 결과 → '최신 회의록으로 다시 만들기'
+  const staleMeetingReq = new Set(
+    requests
+      .filter((r) => r.status === "done" && meeting && !outdatedReq.has(r.id))
+      .filter((r) => {
+        const m = (r.context_snapshot as { meeting?: { meetingId?: string } | null } | null)?.meeting;
+        return Boolean(m?.meetingId && m.meetingId !== meeting!.meetingId);
+      })
+      .map((r) => r.id),
+  );
   return {
     approvedPlan: approvedVersionId ? { versionNo: plan!.versionNo } : null,
     canAdd: can(actor, { type: "reference.add", task: res }) && task.status !== "cancelled",
@@ -214,6 +240,7 @@ export async function listReferences(db: Db, actor: ActorT, taskId: string, avai
       status: r.status as "queued" | "running" | "done" | "failed",
       instruction: r.instruction,
       outdated: outdatedReq.has(r.id),
+      staleMeeting: staleMeetingReq.has(r.id),
       options: ((r.context_snapshot as { options?: Record<string, boolean> } | null)?.options ?? {}) as { useMinutes?: boolean; usePlan?: boolean; usePastWork?: boolean },
       by: name(r.requested_by),
       at: r.created_at,

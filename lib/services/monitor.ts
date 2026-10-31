@@ -110,7 +110,7 @@ export async function runMonitor(db: Db, termId: string, opts: { provider?: AiPr
     try {
       const out = await callStructured(db, opts.provider, {
         agent: "a7", promptVersion: A7_PROMPT_VERSION, schema: a7Schema, jobId: null,
-        budgetKrw: await getNumberSetting(db, termId, "AI_DAILY_BUDGET_KRW", 10000), usdKrw: Number(process.env.USD_KRW ?? 1400), maxTokens: 2000,
+        budgetKrw: await getNumberSetting(db, termId, "AI_DAILY_BUDGET_KRW", 30000), usdKrw: Number(process.env.USD_KRW ?? 1400), maxTokens: 2000,
         system: `너는 학생회 사무국의 진행 점검 비서다. 주어진 점검 결과만으로 사무국장이 오늘 챙길 일을 한국어로 짧게 정리한다. 없는 사실을 만들지 않는다.${COUNCIL_RULES}`,
         documents: [{ name: "점검 결과", content: alerts.slice(0, 60).map((a) => `- [${a.severity}] ${a.title}`).join("\n") }],
         prompt: `${weekly ? "이번 주 요약" : "오늘 요약"}을 summary(3문장 이내)와 top_actions(가장 급한 일 최대 5개)로 제출하라.`,

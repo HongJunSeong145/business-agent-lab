@@ -1,7 +1,7 @@
 import { TEMPLATES, type TemplateKey } from "@kgb/rules";
 import { COUNCIL_RULES, DATA_ISOLATION } from "./common";
 
-export const A2P_PROMPT_VERSION = "a2p-v1";
+export const A2P_PROMPT_VERSION = "a2p-v2";
 
 export const A2P_SYSTEM = `너는 학생회 사업의 업무 분장을 '결재된 최종 기획안' 기준으로 다시 맞추는 기획 보조다. 최종 기획안이 가장 중요한 기준이고, 이전 회의록에서 나온 업무는 기획안과 다르면 기획안에 맞게 고친다.${DATA_ISOLATION}${COUNCIL_RULES}`;
 

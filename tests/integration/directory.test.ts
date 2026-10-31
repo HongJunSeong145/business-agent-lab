@@ -135,14 +135,19 @@ describe("전역 검색·알림·AI 상한", () => {
     expect((await listNotifications(prisma, pres.userId)).unread).toBe(1); // 남의 알림은 그대로
   });
 
-  it("AI 하루 상한 10,000원: 설정값이 더 커도 10,000원에서 멈추고, 그 아래면 통과 / 예전 기본값 3,000은 시작 시 10,000으로", async () => {
-    await prisma.aiRun.create({ data: { agent: "a5", model: "x", output_valid: true, cost_estimate_krw: 5000 } });
-    await expect(assertBudget(prisma, 10000)).resolves.toBeUndefined();
-    await expect(assertBudget(prisma, 3000)).rejects.toBeInstanceOf(AiBudgetExceededError); // 설정을 낮추면 그 값
-    await prisma.aiRun.create({ data: { agent: "a5", model: "x", output_valid: true, cost_estimate_krw: 5000 } });
-    await expect(assertBudget(prisma, 50000)).rejects.toBeInstanceOf(AiBudgetExceededError); // 상한 10,000
-    await prisma.setting.update({ where: { term_id_key: { term_id: pres.termId, key: "AI_DAILY_BUDGET_KRW" } }, data: { value: 3000 } });
+  it("AI 하루 상한 30,000원: 설정값이 더 커도 30,000원에서 멈추고, 그 아래면 통과 / 예전 기본값 3,000·10,000은 시작 시 30,000으로", async () => {
+    await prisma.aiRun.create({ data: { agent: "a5", model: "x", output_valid: true, cost_estimate_krw: 20000 } });
+    await expect(assertBudget(prisma, 30000)).resolves.toBeUndefined();
+    await expect(assertBudget(prisma, 10000)).rejects.toBeInstanceOf(AiBudgetExceededError); // 설정을 낮추면 그 값
+    await prisma.aiRun.create({ data: { agent: "a5", model: "x", output_valid: true, cost_estimate_krw: 10000 } });
+    await expect(assertBudget(prisma, 50000)).rejects.toBeInstanceOf(AiBudgetExceededError); // 상한 30,000
+    for (const old of [3000, 10000]) {
+      await prisma.setting.update({ where: { term_id_key: { term_id: pres.termId, key: "AI_DAILY_BUDGET_KRW" } }, data: { value: old } });
+      await ensureBaseSetup(prisma);
+      expect((await prisma.setting.findUniqueOrThrow({ where: { term_id_key: { term_id: pres.termId, key: "AI_DAILY_BUDGET_KRW" } } })).value).toBe(30000);
+    }
+    await prisma.setting.update({ where: { term_id_key: { term_id: pres.termId, key: "AI_DAILY_BUDGET_KRW" } }, data: { value: 5000 } });
     await ensureBaseSetup(prisma);
-    expect((await prisma.setting.findUniqueOrThrow({ where: { term_id_key: { term_id: pres.termId, key: "AI_DAILY_BUDGET_KRW" } } })).value).toBe(10000);
+    expect((await prisma.setting.findUniqueOrThrow({ where: { term_id_key: { term_id: pres.termId, key: "AI_DAILY_BUDGET_KRW" } } })).value).toBe(5000); // 사용자가 정한 값은 그대로
   });
 });

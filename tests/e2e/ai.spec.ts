@@ -55,7 +55,7 @@ test("대시보드: 검토 대기 배지·알림, 승인 전 AI 제안 마감이
   await expect(page.getByLabel(/읽지 않은 알림 [1-9]/)).toBeVisible();
 });
 
-test("검토 화면: 추론 항목 기본 해제, 수정 후 선택 승인 → 사업·업무 생성, 수정 마감은 확정", async ({ page }) => {
+test("검토 화면: 회의록에 나온 업무만(표준 업무 자동 추가 없음), 수정 후 선택 승인 → 사업·업무 생성, 수정 마감은 확정", async ({ page }) => {
   await loginOk(page, E2E.adminEmail, E2E.adminPassword);
   await page.locator("header").getByRole("link", { name: /검토 대기/ }).click();
   await expect(page).toHaveURL(/\/review$/);
@@ -63,14 +63,17 @@ test("검토 화면: 추론 항목 기본 해제, 수정 후 선택 승인 → �
   await expect(group).toBeVisible();
   const projectRow = group.locator("[data-kind='new_project']");
   await expect(projectRow.getByRole("checkbox")).toBeChecked();
-  // 추론(표준 템플릿) 항목은 기본 체크 해제
-  const inferred = group.locator("li", { hasText: "추론" }).first();
-  await expect(inferred.getByRole("checkbox")).not.toBeChecked();
+  // 국서 역할(표준 업무) 목록을 업무로 덧붙이지 않는다 → '추론' 항목 없음
+  await expect(group.locator("li", { hasText: "추론" })).toHaveCount(0);
   // 회의록 근거 항목: 카드뉴스 제작 — 마감 수정
   const card = group.locator("[data-proposal='간식 행사 카드뉴스 제작']");
   await expect(card.getByRole("checkbox")).toBeChecked();
   await card.getByLabel("마감").fill("2026-11-23");
   await card.getByLabel("마감").blur();
+  // 기획안 업무 하나는 남겨 둔다(검토 대기 유지 확인)
+  const draft = group.locator("[data-kind='new_task']", { hasText: "기획안" }).first();
+  const draftTitle = await draft.getAttribute("data-proposal");
+  await draft.getByRole("checkbox").uncheck();
   await page.getByRole("button", { name: /선택 승인/ }).click();
   await expect(page.getByText(/사업 1건, 업무 \d+건 승인/)).toBeVisible();
 
@@ -80,8 +83,8 @@ test("검토 화면: 추론 항목 기본 해제, 수정 후 선택 승인 → �
   expect(t[0]).toEqual({ due: "2026-11-23", due_state: "confirmed", status: "edited_approved" });
   const proj = await sql<{ n: string }>("SELECT count(*) n FROM projects WHERE title = '종강 간식 행사' AND created_from_meeting_id = $1", [await meetingId(TITLE)]);
   expect(Number(proj[0]!.n)).toBe(1);
-  // 남은 추론 항목은 계속 검토 대기
-  await expect(page.locator("li", { hasText: "추론" }).first()).toBeVisible();
+  // 남긴 항목은 계속 검토 대기
+  await expect(page.locator(`[data-proposal='${draftTitle}']`)).toBeVisible();
   // 회의록 'AI 제안' 탭에서 처리 상태 확인
   await page.goto(`/minutes?id=${await meetingId(TITLE)}&tab=proposals`);
   await expect(page.getByTestId("meeting-proposals")).toContainText("수정 승인");
@@ -118,7 +121,7 @@ test("검토 화면 국서별 정리: 기획·재정·사무·홍보·집행 구
   await ops.getByLabel("직접 추가 마감").fill("2026-12-01");
   await expect(page.getByText(/직접 추가 1건/)).toBeVisible();
   // 다른 제안은 모두 해제하고 직접 추가만 반영
-  for (const box of await page.getByRole("checkbox", { checked: true }).all()) await box.uncheck();
+  while (await page.getByRole("checkbox", { checked: true }).count()) await page.getByRole("checkbox", { checked: true }).first().uncheck();
   await page.getByRole("button", { name: "선택 승인 (1)" }).click();
   await expect.poll(async () => (await sql<{ code: string; due: string }>("SELECT d.code, to_char(t.due_date,'YYYY-MM-DD') due FROM tasks t JOIN task_departments td ON td.task_id = t.id AND td.role = 'lead' JOIN departments d ON d.id = td.department_id WHERE t.title = 'E2E 행사 당일 집행매뉴얼'"))[0]).toEqual({ code: "operations", due: "2026-12-01" });
 });
@@ -154,7 +157,7 @@ test("국원 마감 변경 요청 → 국장 검토 화면에서 승인 → 마�
   await expect(row).toContainText("2026-11-25");
   await expect(row).toContainText("인쇄소 일정");
   // 다른 제안은 선택 해제하고 이 요청만 승인
-  for (const cb of await lead.getByRole("checkbox", { checked: true }).all()) await cb.uncheck();
+  while (await lead.getByRole("checkbox", { checked: true }).count()) await lead.getByRole("checkbox", { checked: true }).first().uncheck();
   await row.getByRole("checkbox").check();
   await lead.getByRole("button", { name: "선택 승인 (1)" }).click();
   await expect(lead.getByText(/마감 변경 1건 승인/)).toBeVisible();

@@ -60,7 +60,7 @@ async function handleError(db: Db, job: { id: string; attempts: number; payload:
 
 async function aiSettings(db: Db, termId: string) {
   return {
-    budgetKrw: await getNumberSetting(db, termId, "AI_DAILY_BUDGET_KRW", 10000),
+    budgetKrw: await getNumberSetting(db, termId, "AI_DAILY_BUDGET_KRW", 30000),
     usdKrw: Number(process.env.USD_KRW ?? 1400),
   };
 }
@@ -93,7 +93,7 @@ export async function runAnalyzeJob(db: Db, provider: AiProvider, aiJobId: strin
       ...s,
       system: A1_SYSTEM,
       documents: [{ name: "회의록", content: numbered(paragraphs) }],
-      prompt: a1Prompt({ title: meeting.title, meetingDate, meetingType: MEETING_TYPE[meeting.meeting_type] ?? meeting.meeting_type, projects: projects.map((p) => ({ title: p.title, event_start: p.event_start ? dateColumnToString(p.event_start) : null })) }),
+      prompt: a1Prompt({ title: meeting.title, meetingDate, meetingType: MEETING_TYPE[meeting.meeting_type] ?? meeting.meeting_type, projects: projects.filter((p) => meeting.is_demo || meeting.title.startsWith("[데모]") || !p.title.startsWith("[데모]")).map((p) => ({ title: p.title, event_start: p.event_start ? dateColumnToString(p.event_start) : null })) }),
       mockContext: { paragraphs, meetingDate },
     });
     const summary = groundAll(raw, paragraphs);
@@ -138,7 +138,9 @@ export async function runProposeJob(db: Db, provider: AiProvider, aiJobId: strin
         },
       },
     });
-    const existing: ExistingProject[] = projects.map((p) => ({
+    // '[데모]' 사업은 체험용 가상 데이터 — 실제 회의록(제목에 [데모] 없음)과는 연결하지 않는다(실제 회의가 데모 업무에 섞이던 문제)
+    const isDemoMeeting = meeting.is_demo || meeting.title.startsWith("[데모]");
+    const existing: ExistingProject[] = projects.filter((p) => isDemoMeeting || !(p.is_demo || p.title.startsWith("[데모]"))).map((p) => ({
       id: p.id, title: p.title, event_start: p.event_start ? dateColumnToString(p.event_start) : null, venue: p.venue, expected_beneficiaries: p.expected_beneficiaries,
       uses_external_vendor: p.uses_external_vendor, funding: p.funding_sources.map((f) => f.source as FundingSource),
       tasks: p.tasks.map((t) => ({ id: t.id, title: t.title, template_key: t.template_key, due: t.due_date ? dateColumnToString(t.due_date) : null, lead: t.departments[0]?.department.code ?? null, done: t.is_completed || t.status === "done", fromMeeting: t.source_proposal?.source_type === "meeting" ? t.source_proposal.source_id : null })),

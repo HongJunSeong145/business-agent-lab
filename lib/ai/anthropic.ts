@@ -9,11 +9,34 @@ import type { AiProvider, CompleteRequest, CompleteResult, SearchRequest, Search
  *  - 거절(stop_reason=refusal) 대비: 서버측 대체 모델(fallbacks: "default") 사용.
  *  - baseURL 을 명시한다(실행 환경의 ANTHROPIC_BASE_URL 에 끌려가지 않도록).
  */
-export const ANTHROPIC_DEFAULT_MODEL = "claude-opus-5-5";
+export const ANTHROPIC_DEFAULT_MODEL = "claude-fable-5-1";
+
+/**
+ * 생각 깊이(effort). 사용자 결정(2026-10-31): 비용이 더 들어도 사고력·추천력이 높은 모델(Fable 5.1)과 깊은 사고(high).
+ * 하루 점검 문장(a7)처럼 단순한 일은 low. 환경변수 LLM_EFFORT 로 바꿀 수 있다(low·medium·high·xhigh·max).
+ */
+type Effort = "low" | "medium" | "high" | "xhigh" | "max";
+export function effortFor(agent: string, env = process.env.LLM_EFFORT): Effort {
+  if (agent === "a7") return "low";
+  return (["low", "medium", "high", "xhigh", "max"] as const).find((e) => e === env) ?? "high";
+}
+/** 계정에서 기본 모델(Fable 5.1)을 쓸 수 없을 때(없는 모델·데이터 보존 정책 등) 한 번만 바꿔 시도할 모델 */
+export const ANTHROPIC_BACKUP_MODEL = "claude-opus-5-5";
+function modelUnavailable(e: unknown): boolean {
+  if (e instanceof Anthropic.NotFoundError) return true;
+  if (e instanceof Anthropic.BadRequestError || e instanceof Anthropic.PermissionDeniedError) return /model|retention|zero data|zdr|not available|access/i.test(e.message ?? "");
+  return false;
+}
+
+/** 생각(thinking) 토큰도 출력 한도에 포함되므로 넉넉히 — 비용은 실제 쓴 만큼만 든다 */
+const MIN_MAX_TOKENS = 32000;
 
 /** 1M 토큰당 USD (입력, 출력) — 200K 이하 프롬프트 기준 */
 const PRICES: Record<string, [number, number]> = {
+  "claude-fable-5-1": [10, 50],
+  "claude-fable-5": [10, 50],
   "claude-opus-5-5": [4, 20],
+  "claude-opus-5": [5, 25],
   "claude-sonnet-5-5": [2, 10],
   "claude-haiku-5-5": [0.1, 0.5],
 };
@@ -31,7 +54,7 @@ export function anthropicCostUsd(model: string, inTok: number, outTok: number): 
 const FALLBACK_MODELS = new Set(["claude-opus-5-5", "claude-sonnet-5-5", "claude-opus-5", "claude-fable-5-1"]);
 
 /** JSON Schema 를 구조화 출력이 받는 형태로 정리: 모든 object 에 additionalProperties:false, 미지원 키워드 제거 */
-const DROP_KEYWORDS = new Set(["$schema", "minLength", "maxLength", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "minItems", "maxItems", "pattern", "format"]);
+const DROP_KEYWORDS = new Set(["$schema", "default", "minLength", "maxLength", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "minItems", "maxItems", "pattern", "format"]);
 
 export function toStrictSchema(s: unknown): unknown {
   if (Array.isArray(s)) return s.map(toStrictSchema);
@@ -58,12 +81,23 @@ export class AnthropicProvider implements AiProvider {
   private readonly client: Anthropic;
   constructor(
     apiKey: string,
-    readonly model: string,
+    public model: string,
     opts: { timeoutMs?: number; client?: Anthropic } = {},
   ) {
     this.client =
       opts.client ??
-      new Anthropic({ apiKey, baseURL: "https://api.anthropic.com", timeout: opts.timeoutMs ?? 300_000, maxRetries: 1 });
+      new Anthropic({ apiKey, baseURL: "https://api.anthropic.com", timeout: opts.timeoutMs ?? 900_000, maxRetries: 1 });
+  }
+
+  /** 기본 모델을 계정에서 못 쓰면 예비 모델로 바꿔 한 번 더(이후 요청도 예비 모델) */
+  private async withBackup<T>(fn: (model: string) => Promise<T>): Promise<T> {
+    try {
+      return await fn(this.model);
+    } catch (e) {
+      if (this.model === ANTHROPIC_BACKUP_MODEL || !modelUnavailable(e)) throw e;
+      this.model = ANTHROPIC_BACKUP_MODEL;
+      return fn(this.model);
+    }
   }
 
   async complete(req: CompleteRequest): Promise<CompleteResult> {
@@ -80,14 +114,17 @@ export class AnthropicProvider implements AiProvider {
     const useFallback = FALLBACK_MODELS.has(this.model);
     let res: Anthropic.Beta.BetaMessage;
     try {
-      res = await this.client.beta.messages.create({
-        model: this.model,
-        max_tokens: req.maxTokens ?? 16000,
-        system: req.system,
-        messages: [{ role: "user", content }],
-        output_config: { format: { type: "json_schema", schema: toStrictSchema(req.schema) as Record<string, unknown> } },
-        ...(useFallback ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
-      });
+      // 긴 생각·출력도 끊기지 않게 스트리밍으로 받고 최종 메시지만 쓴다
+      res = await this.withBackup((model) => this.client.beta.messages
+        .stream({
+          model,
+          max_tokens: Math.max(req.maxTokens ?? 16000, MIN_MAX_TOKENS),
+          system: req.system,
+          messages: [{ role: "user", content }],
+          output_config: { effort: effortFor(req.agent), format: { type: "json_schema", schema: toStrictSchema(req.schema) as Record<string, unknown> } },
+          ...(useFallback ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
+        })
+        .finalMessage());
     } catch (e) {
       throw mapError(e);
     }
@@ -127,13 +164,16 @@ export class AnthropicProvider implements AiProvider {
     for (let turn = 0; turn < 4; turn++) {
       let res: Anthropic.Beta.BetaMessage;
       try {
-        res = await this.client.beta.messages.create({
-          model: this.model,
-          max_tokens: 16000,
-          system: req.system,
-          messages,
-          tools: [{ type: "web_search_20260209", name: "web_search", max_uses: req.maxUses ?? 5, allowed_callers: ["direct"] }],
-        });
+        res = await this.withBackup((m) => this.client.beta.messages
+          .stream({
+            model: m,
+            max_tokens: MIN_MAX_TOKENS,
+            system: req.system,
+            messages,
+            output_config: { effort: effortFor(req.agent) },
+            tools: [{ type: "web_search_20260209", name: "web_search", max_uses: req.maxUses ?? 5, allowed_callers: ["direct"] }],
+          })
+          .finalMessage());
       } catch (e) {
         throw mapError(e);
       }
