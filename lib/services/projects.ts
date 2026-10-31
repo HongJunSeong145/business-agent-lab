@@ -173,6 +173,57 @@ export async function cancelProject(db: Db, actor: ActorT, id: string) {
   });
 }
 
+/**
+ * 사업 삭제(소프트) — 사업과 그 업무를 함께 지우고, 이 사업·업무를 대상으로 한 대기 제안을 정리한다.
+ * 다른 사업 업무가 이 사업 업무에 의존하던 차단은 풀린다. '되살리기'로 사업·업무를 함께 되돌린다.
+ */
+export async function deleteProject(db: Db, actor: ActorT, id: string) {
+  assertCan(actor, { type: "project.cancel" });
+  const p = await db.project.findFirst({ where: { id, term_id: actor.termId, deleted_at: null } });
+  if (!p) throw new ServiceError("사업을 찾을 수 없습니다.", 404);
+  return db.$transaction(async (tx) => {
+    const now = new Date();
+    const tasks = await tx.task.findMany({ where: { project_id: id, deleted_at: null }, select: { id: true } });
+    const ids = tasks.map((t) => t.id);
+    await tx.task.updateMany({ where: { id: { in: ids } }, data: { deleted_at: now } });
+    await tx.project.update({ where: { id }, data: { deleted_at: now } });
+    const outside = await tx.taskDependency.findMany({ where: { depends_on_task_id: { in: ids }, task_id: { notIn: ids } }, select: { task_id: true } });
+    const stale = await tx.proposal.updateMany({ where: { status: "pending", OR: [{ project_key: id }, { target_id: id }, { target_id: { in: ids } }] }, data: { status: "superseded" } });
+    await tx.referenceRequest.updateMany({ where: { task_id: { in: ids }, status: "queued" }, data: { status: "failed", error: "사업이 삭제되어 취소했습니다." } });
+    await writeAudit(tx, { actorId: actor.userId, action: "project.delete", entityType: "project", entityId: id, diff: { title: p.title, tasks: ids, supersededProposals: stale.count, at: now.toISOString() } });
+    await recomputeReadiness(tx, actor.termId, { taskIds: outside.map((d) => d.task_id) });
+    return { deletedTasks: ids.length, supersededProposals: stale.count };
+  });
+}
+
+/** 삭제한 사업 되살리기 — 사업과 함께 지워졌던 업무도 함께 */
+export async function restoreProject(db: Db, actor: ActorT, id: string) {
+  assertCan(actor, { type: "project.cancel" });
+  const p = await db.project.findFirst({ where: { id, term_id: actor.termId, deleted_at: { not: null } } });
+  if (!p) throw new ServiceError("되살릴 사업을 찾을 수 없습니다.", 404);
+  return db.$transaction(async (tx) => {
+    const log = await tx.activityLog.findFirst({ where: { action: "project.delete", entity_type: "project", entity_id: id }, orderBy: { created_at: "desc" } });
+    const ids = ((log?.diff as { tasks?: string[] } | null)?.tasks ?? []) as string[];
+    await tx.project.update({ where: { id }, data: { deleted_at: null } });
+    await tx.task.updateMany({ where: { id: { in: ids } }, data: { deleted_at: null } });
+    await writeAudit(tx, { actorId: actor.userId, action: "project.restore", entityType: "project", entityId: id, diff: { title: p.title, tasks: ids.length } });
+    await recomputeReadiness(tx, actor.termId, { taskIds: ids });
+    await recomputeReadiness(tx, actor.termId, { dependentsOf: ids }); // 다른 사업의 후속 업무도 다시 차단·해제 계산
+    return { restoredTasks: ids.length };
+  });
+}
+
+/** 최근 삭제한 사업(되살리기 목록) — 최근 60일 */
+export async function listDeletedProjects(db: Db, actor: ActorT) {
+  assertCan(actor, { type: "project.cancel" });
+  return db.project.findMany({
+    where: { term_id: actor.termId, deleted_at: { not: null, gte: new Date(Date.now() - 60 * 86400_000) } },
+    orderBy: { deleted_at: "desc" },
+    take: 30,
+    select: { id: true, title: true, deleted_at: true },
+  });
+}
+
 const datesSchema = z
   .object({ event_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "행사일 형식 오류"), event_end: optDate })
   .refine((v) => !v.event_end || v.event_start <= v.event_end, { message: "행사 종료일이 시작일보다 빠릅니다." });

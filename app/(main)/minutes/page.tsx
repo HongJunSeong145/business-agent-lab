@@ -74,6 +74,22 @@ export default async function MinutesPage({ searchParams }: { searchParams: Prom
         prisma.proposal.findMany({ where: { source_type: "meeting", source_id: detail.id, status: { not: "superseded" } }, orderBy: { created_at: "asc" } }),
       ])
     : [null, []];
+  // 승인해서 만든 업무·사업 — 거기서 바로 고치거나 지울 수 있게 연결
+  const made = proposals.length
+    ? await prisma.task.findMany({
+        where: { source_proposal_id: { in: proposals.map((p) => p.id) } },
+        select: { id: true, source_proposal_id: true, deleted_at: true, departments: { where: { role: "lead" }, select: { department: { select: { code: true } } } } },
+      })
+    : [];
+  const madeLink = (p: (typeof proposals)[number]): { href: string; deleted: boolean } | null => {
+    if (p.kind === "new_project") {
+      const id = (p.payload as { created_project_id?: string }).created_project_id;
+      return id ? { href: `/projects/${id}`, deleted: false } : null;
+    }
+    const t = made.find((x) => x.source_proposal_id === p.id) ?? (["deadline", "update_task", "cancel"].includes(p.kind) && p.target_id ? { id: p.target_id, deleted_at: null, departments: [] } : null);
+    if (!t) return null;
+    return { href: `/departments/${t.departments[0]?.department.code ?? "planning"}?task=${t.id}`, deleted: Boolean(t.deleted_at) };
+  };
   const analysis = detail?.analyses[0];
   const hasText = Boolean(file?.extracted_text);
 
@@ -238,7 +254,12 @@ export default async function MinutesPage({ searchParams }: { searchParams: Prom
                             {String((p.payload as { title?: string }).title ?? "")}
                             {p.inferred ? <span className="ml-1 text-xs text-warning-text">추론</span> : null}
                           </span>
-                          <Badge className={p.status === "pending" ? "bg-[#EEF3F8] text-info" : ""}>{PROPOSAL_STATUS[p.status] ?? p.status}</Badge>
+                          <span className="flex shrink-0 items-center gap-2">
+                            {["approved", "edited_approved"].includes(p.status) && madeLink(p) ? (
+                              madeLink(p)!.deleted ? <span className="text-xs text-muted">삭제됨</span> : <Link href={madeLink(p)!.href} className="text-xs underline">열기·수정</Link>
+                            ) : null}
+                            <Badge className={p.status === "pending" ? "bg-[#EEF3F8] text-info" : ""}>{PROPOSAL_STATUS[p.status] ?? p.status}</Badge>
+                          </span>
                         </li>
                       ))}
                     </ul>

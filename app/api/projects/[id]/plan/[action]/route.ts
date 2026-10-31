@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { readJson, withUser } from "@/lib/api";
-import { approvePlan, rejectPlan, requestPlanReferences, submitPlan } from "@/lib/services/plans";
+import { approvePlan, rejectPlan, requestPlanReferences, revokePlanApproval, submitPlan } from "@/lib/services/plans";
 import { dispatchJob } from "@/lib/jobs/queue";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +20,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       await dispatchJob(r.aiJobId, "reference");
       return Response.json(r, { status: 202 });
     }
+    if (action === "revoke") return Response.json(await revokePlanApproval(prisma, u, id));
     if (action === "reject") return (await rejectPlan(prisma, u, id, ((await readJson(req)) as { reason?: unknown }).reason), Response.json({ ok: true }));
     return Response.json({ error: "not_found" }, { status: 404 });
   });

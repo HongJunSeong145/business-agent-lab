@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Popover } from "radix-ui";
-import { ChevronRight, Lock, Paperclip, BookOpen } from "lucide-react";
+import { ChevronRight, Lock, Paperclip, BookOpen, Trash2 } from "lucide-react";
 import { effectiveProgress, progressSource } from "@kgb/rules";
 import { DeptChip } from "@/components/dept/dept-chip";
 import { ProgressBar } from "@/components/dept/progress-bar";
@@ -12,7 +12,8 @@ import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/client-api";
 import type { TaskRowData } from "@/lib/task-rows";
 import { postDeliverable } from "./deliverables-tab";
-import { BulkSelect } from "./bulk";
+import { BulkSelect, useBulk } from "./bulk";
+import { deleteTaskWithUndo } from "./task-actions";
 import type { DepartmentCode } from "@/lib/design/tokens";
 import { cn, dDayLabel } from "@/lib/utils";
 
@@ -32,6 +33,7 @@ export function TaskRow({ task, today, deptCode }: { task: TaskRowData; today: s
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(task.effective);
+  const { canManage } = useBulk();
   if (completedOverride !== null && task.isCompleted === completedOverride && !busy) setCompletedOverride(null);
   if (manualOverride !== null && task.manualProgress === manualOverride.v) setManualOverride(null);
   const completed = completedOverride ?? task.isCompleted;
@@ -169,6 +171,17 @@ export function TaskRow({ task, today, deptCode }: { task: TaskRowData; today: s
           <BookOpen className="h-4 w-4" />
           {task.referenceCount ? <span className="tabular text-xs">{task.referenceCount}</span> : null}
         </Link>
+        {canManage ? (
+          <button
+            type="button"
+            className="inline-flex h-7 w-7 items-center justify-center rounded text-muted hover:bg-surface hover:text-danger"
+            aria-label={`${task.title} 삭제`}
+            title="삭제(되돌리기 가능)"
+            onClick={() => void deleteTaskWithUndo(task.id, task.title, () => router.refresh())}
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        ) : null}
         <Link href={drawerHref} scroll={false} className="inline-flex h-7 w-7 items-center justify-center rounded hover:bg-surface" aria-label={`${task.title} 상세`}><ChevronRight className="h-4 w-4" /></Link>
       </span>
     </li>

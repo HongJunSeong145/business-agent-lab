@@ -1,5 +1,6 @@
 "use client";
 
+import { useLive } from "@/components/layout/live-refresh";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, ExternalLink, FileUp, Link2, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -71,6 +72,7 @@ export function DeliverablesTab({ taskId, onChanged }: { taskId: string; onChang
     }
   }, [taskId]);
 
+  useLive(() => void load()); // 다른 화면·다른 사람이 바꾼 내용 실시간 반영
   useEffect(() => {
     let cancelled = false;
     api<Data>(`/api/tasks/${taskId}/deliverables`)

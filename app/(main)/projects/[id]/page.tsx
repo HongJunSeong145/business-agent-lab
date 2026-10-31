@@ -14,7 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/common/badges";
 import { PartnersPanel, ProjectFinancePanel } from "@/components/finance/project-finance";
 import { ProjectFormDialog } from "@/components/projects/project-form-dialog";
-import { ProjectActions } from "@/components/projects/project-actions";
+import { ProjectActions, ProjectDeleteButton } from "@/components/projects/project-actions";
+import { BoardTaskDelete } from "@/components/tasks/board-task-delete";
+import { TrashPanel } from "@/components/tasks/trash-panel";
 import { ProjectProgressBar } from "@/components/projects/project-progress-bar";
 import { TaskFormDialog } from "@/components/tasks/task-form-dialog";
 import { SchedulePanel } from "@/components/projects/schedule-panel";
@@ -79,7 +81,10 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               }}
             />
             <ProjectActions id={p.id} status={p.status} />
+            {can(user, { type: "project.cancel" }) ? <ProjectDeleteButton id={p.id} title={p.title} /> : null}
           </div>
+        ) : can(user, { type: "project.cancel" }) ? (
+          <ProjectDeleteButton id={p.id} title={p.title} />
         ) : null}
       </div>
 
@@ -168,8 +173,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
                 <ul className="space-y-1 p-2">
                   {mine.length === 0 ? <li className="px-1 py-2 text-xs text-muted">업무 없음</li> : null}
                   {mine.map((r) => (
-                    <li key={r.id} className="rounded-lg border border-border px-2 py-1.5 text-xs">
-                      <Link href={`?task=${r.id}`} scroll={false} className={cn("block font-medium hover:underline", (r.isCompleted || r.status === "cancelled") && "text-muted line-through")}>{r.title}</Link>
+                    <li key={r.id} className="group relative rounded-lg border border-border px-2 py-1.5 text-xs">
+                      {can(user, { type: "task.create" }) ? <BoardTaskDelete id={r.id} title={r.title} /> : null}
+                      <Link href={`?task=${r.id}`} scroll={false} className={cn("block pr-5 font-medium hover:underline", (r.isCompleted || r.status === "cancelled") && "text-muted line-through")}>{r.title}</Link>
                       <span className="text-muted">
                         {r.departments.find((d) => d.code === code)?.role === "support" ? "협조 · " : ""}
                         {r.due ?? "마감 없음"} · {r.effective}%{r.status === "blocked" ? " · 차단" : ""}
@@ -182,6 +188,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           })}
         </div>
       </section>
+
+      {can(user, { type: "task.create" }) ? <TrashPanel query={`project=${p.id}`} /> : null}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>

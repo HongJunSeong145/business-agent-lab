@@ -88,6 +88,35 @@ export async function addReference(db: Db, storage: Storage, actor: ActorT, task
   }
 }
 
+const updateRefSchema = z
+  .object({
+    title: z.string().trim().min(1, "제목을 입력하세요.").max(200),
+    summary: z.string().trim().max(2000).nullable(),
+    url: z.string().trim().url("올바른 주소가 아닙니다.").max(2000).refine((u) => /^https?:\/\//i.test(u), "http(s) 주소만 넣을 수 있습니다.").nullable(),
+    content: z.string().max(200_000).nullable(),
+  })
+  .partial();
+
+/** 수정: 제목·요약·링크·예시안 본문(AI 예시안을 다듬어 쓰기). 추가한 사람·의뢰한 사람·같은 국서·국장 이상 */
+export async function updateReference(db: Db, actor: ActorT, id: string, raw: unknown) {
+  const v = updateRefSchema.safeParse(raw ?? {});
+  if (!v.success) throw new ServiceError(v.error.issues[0]?.message ?? "입력값 오류");
+  const item = await db.referenceItem.findFirst({ where: { id, deleted_at: null }, include: { request: true } });
+  if (!item?.task_id) throw new ServiceError("레퍼런스를 찾을 수 없습니다.", 404);
+  const task = await loadTask(db, actor.termId, item.task_id);
+  const owner = item.created_by ?? item.request?.requested_by ?? null;
+  if (!isLeader(actor) && owner !== actor.userId && !can(actor, { type: "reference.add", task: taskResource(task) })) throw new ServiceError("이 레퍼런스를 고칠 권한이 없습니다.", 403);
+  const data: Prisma.ReferenceItemUpdateInput = {};
+  if (v.data.title !== undefined) data.title = v.data.title;
+  if (v.data.summary !== undefined) data.summary = v.data.summary || null;
+  if (v.data.url !== undefined && item.kind === "link") data.url = v.data.url;
+  if (v.data.content !== undefined && item.content !== null) data.content = v.data.content ?? "";
+  await db.$transaction(async (tx) => {
+    await tx.referenceItem.update({ where: { id }, data });
+    await writeAudit(tx, { actorId: actor.userId, action: "reference.update", entityType: "task", entityId: item.task_id!, diff: { referenceId: id, fields: Object.keys(data) } });
+  });
+}
+
 /** 삭제: 추가한 사람 또는 국장 이상. AI 레퍼런스는 의뢰한 사람 또는 국장 이상 */
 export async function deleteReference(db: Db, actor: ActorT, id: string) {
   const item = await db.referenceItem.findFirst({ where: { id, deleted_at: null }, include: { request: true } });
@@ -276,6 +305,7 @@ export async function listReferences(db: Db, actor: ActorT, taskId: string, avai
       by: name(i.created_by),
       at: i.created_at,
       canDelete: isLeader(actor) || (i.created_by ?? i.request?.requested_by) === actor.userId,
+      canEdit: isLeader(actor) || (i.created_by ?? i.request?.requested_by) === actor.userId || can(actor, { type: "reference.add", task: res }),
     })),
   };
 }

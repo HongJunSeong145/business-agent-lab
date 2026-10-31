@@ -8,6 +8,7 @@ import { Input, Label, Select } from "@/components/ui/field";
 import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/client-api";
 import { cn } from "@/lib/utils";
+import { useLive } from "@/components/layout/live-refresh";
 
 type Fields = {
   title: string; event_date: string; datetime: string; venue: string; budget: number | null; host: string; organizer: string; purpose: string; content: string;
@@ -58,6 +59,8 @@ export function PlanPanel({ projectId }: { projectId: string }) {
       setError((e as Error).message);
     }
   }, [projectId]);
+  // 실시간 반영: 결재 상태·버전·AI 레퍼런스 기획안만 새로 읽는다(작성 중인 양식은 건드리지 않음)
+  useLive(() => void api<Data>(`/api/projects/${projectId}/plan`).then(setData).catch(() => undefined));
   useEffect(() => {
     let cancelled = false;
     api<Data>(`/api/projects/${projectId}/plan`)
@@ -270,6 +273,20 @@ export function PlanPanel({ projectId }: { projectId: string }) {
               반려
             </Button>
           </>
+        ) : null}
+        {data.permissions.approve && data.approvedVersionId ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-danger"
+            disabled={busy}
+            onClick={() => {
+              if (!window.confirm("가장 최근 결재를 취소할까요?\n그 결재로 완료된 기획안 업무는 다시 진행 중이 되고, 기획안 결재를 기다리는 업무는 다시 대기 상태가 됩니다. 결재본 기준 재배정 대기 제안도 정리됩니다.")) return;
+              void act(() => api(`/api/projects/${projectId}/plan/revoke`, { method: "POST" }), "결재를 취소했습니다.");
+            }}
+          >
+            결재 취소
+          </Button>
         ) : null}
       </div>
     </div>

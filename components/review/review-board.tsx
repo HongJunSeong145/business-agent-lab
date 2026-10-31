@@ -12,6 +12,10 @@ import { api } from "@/lib/client-api";
 import { DEPARTMENTS, DEPARTMENT_CODES, type DepartmentCode } from "@/lib/design/tokens";
 import type { ReviewGroup, ReviewItem } from "@/lib/review";
 import { cn } from "@/lib/utils";
+import type { ExistingRow } from "@/lib/review";
+import { emitChanged } from "@/components/layout/live-refresh";
+import { deleteTaskWithUndo } from "@/components/tasks/task-actions";
+import { Trash2 } from "lucide-react";
 
 type Edit = { title?: string; event_start?: string | null; lead_department?: DepartmentCode; support_departments?: DepartmentCode[]; due_date?: string | null };
 
@@ -29,7 +33,7 @@ const fmt = (v: unknown) =>
 /** AI 제안 검토 (8-4): 항목별 체크·수정 → 선택 승인 / 모두 거절 */
 type Manual = { tmp: string; projectKey: string | null; title: string; dept: DepartmentCode; due: string | null };
 
-export function ReviewBoard({ groups }: { groups: ReviewGroup[] }) {
+export function ReviewBoard({ groups, deptIds = {} }: { groups: ReviewGroup[]; deptIds?: Record<string, string> }) {
   const router = useRouter();
   const all = useMemo(() => groups.flatMap((g) => [...g.projects.flatMap((p) => p.items), ...g.others]), [groups]);
   // D8: 추론 항목은 기본 체크 해제
@@ -52,15 +56,16 @@ export function ReviewBoard({ groups }: { groups: ReviewGroup[] }) {
   async function submit(body: { approve: { id: string; edits?: Edit }[]; reject: string[]; create?: { project_key: string | null; title: string; lead_department: string; support_departments: string[]; due_date: string | null }[] }) {
     setPending(true);
     try {
-      const r = await api<{ projects: number; tasks: number; updates: number; deadlines: number; rejected: number; projectIds: string[] }>("/api/proposals/decide", { body });
+      const r = await api<{ projects: number; tasks: number; updates: number; deadlines: number; rejected: number; skipped?: number; projectIds: string[] }>("/api/proposals/decide", { body });
       const parts = [r.projects && `사업 ${r.projects}건`, r.tasks && `업무 ${r.tasks}건`, r.updates && `변경 ${r.updates}건`, r.deadlines && `마감 변경 ${r.deadlines}건`].filter(Boolean);
-      toast(`${parts.length ? `${parts.join(", ")} 승인` : ""}${r.rejected ? `${parts.length ? ", " : ""}${r.rejected}건 거절` : ""}했습니다.`, {
+      toast(`${parts.length ? `${parts.join(", ")} 승인` : ""}${r.rejected ? `${parts.length ? ", " : ""}${r.rejected}건 거절` : ""}했습니다.${r.skipped ? ` (대상이 이미 삭제된 ${r.skipped}건은 건너뜀)` : ""}`, {
         action: r.projectIds[0] ? { label: "사업에서 보기", onClick: () => router.push(`/projects/${r.projectIds[0]}`) } : undefined,
         ms: 8000,
       });
       setEdits({});
       setManual([]);
       router.refresh();
+      emitChanged();
     } catch (e) {
       toast((e as Error).message, { tone: "error" });
     } finally {
@@ -111,14 +116,7 @@ export function ReviewBoard({ groups }: { groups: ReviewGroup[] }) {
                       </div>
                     </li>
                   ))}
-                  {existing.map((e) => (
-                    <li key={e.id} className="flex flex-wrap items-center gap-2 px-4 py-1.5 text-xs text-muted" data-existing={e.title}>
-                      <span className="rounded border border-border px-1.5 py-0.5">이미 배정</span>
-                      <span className={e.done ? "line-through" : "text-text"}>{e.title}</span>
-                      <span className="tabular">마감 {e.due ?? "없음"}{e.due ? (e.dueState === "confirmed" ? " (확정)" : " (제안)") : ""}</span>
-                      {e.previewDue ? <span className="text-warning-text">→ 행사일 변경 승인 시 {e.previewDue}로 다시 계산</span> : null}
-                    </li>
-                  ))}
+                  {existing.map((e) => <ExistingTaskRow key={e.id} e={e} deptIds={deptIds} />)}
                   {items.length + existing.length + mine.length === 0 ? <li className="px-4 py-1.5 text-xs text-muted">없음</li> : null}
                 </ul>
                 <div className="px-4 pb-2">
@@ -279,7 +277,8 @@ function Row({ item: i, meetingId, checked, onToggle, edit, onEdit }: { item: Re
 
         {i.kind === "deadline" ? (
           <p className="text-xs">
-            마감 <span className="text-muted line-through">{fmt(i.before?.due_date)}</span> → <strong>{String(p.due_date)}</strong>{p.reason ? ` · 사유: ${String(p.reason)}` : ""}
+            마감 <span className="text-muted line-through">{i.currentDue !== undefined ? fmt(i.currentDue) : fmt(i.before?.due_date)}</span> → <strong>{String(p.due_date)}</strong>{p.reason ? ` · 사유: ${String(p.reason)}` : ""}
+            {i.currentDue !== undefined && i.before && (i.before.due_date ?? null) !== i.currentDue ? <span className="ml-1 text-warning-text">(제안 뒤 국서 공간에서 마감이 바뀌었습니다)</span> : null}
           </p>
         ) : null}
 
@@ -305,7 +304,7 @@ function Row({ item: i, meetingId, checked, onToggle, edit, onEdit }: { item: Re
             <input aria-label="마감" type="date" className="h-7 rounded border border-border px-1" defaultValue={due ?? ""} onBlur={(e) => (e.target.value || null) !== ((p.due_date ?? ch.due_date ?? null) as string | null) && onEdit({ due_date: e.target.value || null })} />
           </label>
           {!due ? <p className="text-warning-text" data-testid="due-missing">마감 근거 없음 — 직접 입력하세요(비워 두면 마감 없이 등록)</p> : null}
-          {i.kind === "update_task" && i.before && "due_date" in i.before ? <p className="text-muted">지금 마감: {String(i.before.due_date ?? "없음")}</p> : null}
+          {i.kind === "update_task" && i.currentDue !== undefined ? <p className="text-muted">지금 마감: {i.currentDue ?? "없음"}</p> : null}
           {p.due_reason ? (
             <p className={cn("leading-snug", feasible ? "text-muted" : "text-danger")} title={String(p.due_reason)}>
               {!feasible ? <AlertTriangle className="mr-1 inline h-3 w-3" /> : null}
@@ -317,6 +316,76 @@ function Row({ item: i, meetingId, checked, onToggle, edit, onEdit }: { item: Re
       ) : i.confidence !== null ? (
         <p className="text-xs text-muted md:w-56">확신도 {Math.round(i.confidence * 100)}%</p>
       ) : null}
+    </li>
+  );
+}
+
+/**
+ * '이미 배정' 업무 — 검토 화면에서 바로 고치거나 삭제(되돌리기 가능).
+ * 업무 하나를 고치면 국서 공간·사업 진척도·캘린더·30일 일정에 바로 반영된다.
+ */
+function ExistingTaskRow({ e, deptIds }: { e: ExistingRow; deptIds: Record<string, string> }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const patch = async (body: Record<string, unknown>, ok: string) => {
+    setBusy(true);
+    try {
+      await api(`/api/tasks/${e.id}`, { method: "PATCH", body });
+      toast(ok);
+      router.refresh();
+      emitChanged();
+    } catch (err) {
+      toast((err as Error).message, { tone: "error" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <li className="flex flex-wrap items-center gap-2 px-4 py-1.5 text-xs text-muted" data-existing={e.title}>
+      <span className="rounded border border-border px-1.5 py-0.5">이미 배정</span>
+      <input
+        aria-label={`이미 배정 업무명: ${e.title}`}
+        className={cn("min-w-0 flex-1 rounded border border-transparent px-1 py-0.5 hover:border-border focus:border-border", e.done ? "line-through" : "text-text")}
+        defaultValue={e.title}
+        key={e.title}
+        disabled={busy}
+        onKeyDown={(ev) => ev.key === "Enter" && (ev.currentTarget as HTMLInputElement).blur()}
+        onBlur={(ev) => ev.target.value.trim() && ev.target.value.trim() !== e.title && void patch({ title: ev.target.value.trim() }, "업무명을 바꿨습니다.")}
+      />
+      <label className="flex items-center gap-1">
+        마감
+        <input
+          aria-label={`이미 배정 마감: ${e.title}`}
+          type="date"
+          className="h-7 rounded border border-border px-1 text-text"
+          defaultValue={e.due ?? ""}
+          key={e.due ?? "none"}
+          disabled={busy}
+          onBlur={(ev) => ev.target.value !== (e.due ?? "") && void patch({ due_date: ev.target.value || null }, "마감을 바꿨습니다(확정).")}
+        />
+        <span>{e.due ? (e.dueState === "confirmed" ? "확정" : "제안") : ""}</span>
+      </label>
+      <select
+        aria-label={`이미 배정 주관 국서: ${e.title}`}
+        className="h-7 rounded border border-border bg-surface text-xs text-text"
+        value={e.dept}
+        disabled={busy || !deptIds[e.dept]}
+        onChange={(ev) => void patch({ lead_department_id: deptIds[ev.target.value] }, "주관 국서를 바꿨습니다.")}
+      >
+        {DEPARTMENT_CODES.map((c) => <option key={c} value={c}>{DEPARTMENTS[c].nameKo}</option>)}
+      </select>
+      {e.previewDue ? <span className="text-warning-text">→ 행사일 변경 승인 시 {e.previewDue}로 다시 계산</span> : null}
+      <Link href={`/departments/${e.dept}?task=${e.id}`} className="underline">열기</Link>
+      <button
+        type="button"
+        className="text-muted hover:text-danger"
+        aria-label={`이미 배정 업무 삭제: ${e.title}`}
+        title="삭제(되돌리기 가능)"
+        disabled={busy}
+        onClick={() => void deleteTaskWithUndo(e.id, e.title, () => router.refresh())}
+      >
+        <Trash2 className="h-4 w-4" />
+      </button>
     </li>
   );
 }

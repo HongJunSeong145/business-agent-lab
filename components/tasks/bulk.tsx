@@ -9,8 +9,8 @@ import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/client-api";
 import { useOptions } from "./use-options";
 
-type Ctx = { active: boolean; selected: Set<string>; toggle: (id: string) => void };
-const BulkCtx = createContext<Ctx>({ active: false, selected: new Set(), toggle: () => undefined });
+type Ctx = { active: boolean; selected: Set<string>; toggle: (id: string) => void; canManage: boolean };
+const BulkCtx = createContext<Ctx>({ active: false, selected: new Set(), toggle: () => undefined, canManage: false });
 export const useBulk = () => useContext(BulkCtx);
 
 /** 국서 공간 일괄 수정: '여러 업무 선택'을 켜면 행마다 선택 칸이 생기고, 아래 막대에서 한 번에 바꾼다 */
@@ -47,7 +47,7 @@ export function BulkProvider({ children, canManage }: { children: React.ReactNod
     }
   };
   return (
-    <BulkCtx.Provider value={{ active, selected, toggle }}>
+    <BulkCtx.Provider value={{ active, selected, toggle, canManage }}>
       <div className="flex justify-end">
         <Button size="sm" variant="secondary" onClick={() => (setActive(!active), setSelected(new Set()))} aria-pressed={active}>
           <ListChecks className="h-4 w-4" /> {active ? "선택 끝내기" : "여러 업무 선택(일괄 수정)"}
