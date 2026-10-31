@@ -17,6 +17,14 @@ import { ProjectFormDialog } from "@/components/projects/project-form-dialog";
 import { ProjectActions } from "@/components/projects/project-actions";
 import { ProjectProgressBar } from "@/components/projects/project-progress-bar";
 import { TaskFormDialog } from "@/components/tasks/task-form-dialog";
+import { SchedulePanel } from "@/components/projects/schedule-panel";
+import { getProjectSchedule } from "@/lib/services/schedule";
+import { loadRuleParams } from "@/lib/rule-params";
+import { PROMO_TIER_LABEL, withTax, type PromoTier } from "@kgb/rules";
+
+const EVIDENCE_LABEL: Record<string, string> = {
+  receipt: "영수증·이체내역", photo: "행사 사진", beneficiary_roster: "수혜자 명단", official_letter: "공문", plan_doc: "기획안", quote: "견적서", transfer_record: "이체내역", other: "기타",
+};
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +38,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
   const p = await prisma.project.findFirst({ where: { id, term_id: user.termId, deleted_at: null }, include: { funding_sources: true } });
   if (!p) notFound();
-  const [rows, progress, logs, deps] = await Promise.all([
+  const [rows, progress, logs, deps, schedule, evidence, ruleParams] = await Promise.all([
     loadTaskRows(user, { project_id: id }),
     loadProjectProgress([id]),
     prisma.activityLog.findMany({ where: { entity_type: "project", entity_id: id }, orderBy: { created_at: "desc" }, take: 30 }),
@@ -38,6 +46,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       where: { task: { project_id: id, deleted_at: null }, depends_on: { deleted_at: null } },
       include: { task: { select: { title: true } }, depends_on: { select: { title: true } } },
     }),
+    getProjectSchedule(prisma, user, id),
+    prisma.evidenceRequirement.findMany({ where: { project_id: id }, include: { _count: { select: { items: true } } }, orderBy: { created_at: "asc" } }),
+    loadRuleParams(prisma, user.termId),
   ]);
   const canEdit = can(user, { type: "project.confirmSchedule" }) && p.status !== "cancelled";
   const s = (d: Date | null) => (d ? dateColumnToString(d) : "");
@@ -61,7 +72,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               initial={{
                 id: p.id, title: p.title, category: p.category, event_start: s(p.event_start), event_end: s(p.event_end), venue: p.venue ?? "",
                 expected_beneficiaries: p.expected_beneficiaries?.toString() ?? "", host: p.host ?? "", organizer: p.organizer ?? "",
-                uses_external_vendor: p.uses_external_vendor, school: fund("school"), student_fee: fund("student_fee"),
+                uses_external_vendor: p.uses_external_vendor, school: fund("school"), student_fee: fund("student_fee"), promo_tier: p.promo_tier ?? "",
               }}
             />
             <ProjectActions id={p.id} status={p.status} />
@@ -77,13 +88,51 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm md:grid-cols-4">
           <div><dt className="text-muted">행사일</dt><dd className="tabular">{p.event_start ? `${formatKoreanDate(s(p.event_start))}${p.event_end && s(p.event_end) !== s(p.event_start) ? ` ~ ${formatKoreanDate(s(p.event_end))}` : ""}` : "-"}</dd></div>
           <div><dt className="text-muted">장소</dt><dd>{p.venue ?? "-"}</dd></div>
-          <div><dt className="text-muted">재원</dt><dd>{p.funding_sources.length ? p.funding_sources.map((f) => `${FUNDING_LABEL[f.source]} ${Number(f.amount_planned).toLocaleString()}원`).join(", ") : "미정"}</dd></div>
+          <div className="col-span-2">
+            <dt className="text-muted">재원</dt>
+            <dd data-testid="funding">
+              {p.funding_sources.length === 0 ? "미정" : null}
+              {p.funding_sources.map((f) => {
+                const amt = Number(f.amount_planned);
+                if (f.source !== "school") return <span key={f.source} className="mr-3 inline-block">학생회비 {amt.toLocaleString()}원</span>;
+                const t = withTax(amt, ruleParams.SCHOOL_TAX_RATE);
+                return (
+                  <span key={f.source} className="mr-3 inline-block">
+                    교비 {t.amount.toLocaleString()}원 + 세금 {Math.round(ruleParams.SCHOOL_TAX_RATE * 100)}% {t.tax.toLocaleString()}원 = <strong>세금 포함 {t.total.toLocaleString()}원</strong>
+                  </span>
+                );
+              })}
+            </dd>
+          </div>
+          <div><dt className="text-muted">홍보 등급</dt><dd>{p.promo_tier ? PROMO_TIER_LABEL[p.promo_tier as PromoTier] : "미정(저비용으로 계산)"}</dd></div>
           <div><dt className="text-muted">수혜 인원</dt><dd className="tabular">{p.expected_beneficiaries ?? "-"}{p.expected_beneficiaries !== null ? "명" : ""}</dd></div>
           <div><dt className="text-muted">주최</dt><dd>{p.host ?? "-"}</dd></div>
           <div><dt className="text-muted">주관</dt><dd>{p.organizer ?? "-"}</dd></div>
           <div><dt className="text-muted">외부업체</dt><dd>{p.uses_external_vendor ? "이용" : "없음"}</dd></div>
         </dl>
       </Card>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
+        <Card>
+          <CardTitle className="mb-3">일정·규칙</CardTitle>
+          <SchedulePanel projectId={id} view={schedule} canEdit={can(user, { type: "task.create" }) && p.status !== "cancelled"} />
+        </Card>
+        <Card>
+          <CardTitle className="mb-2">증빙 요구사항</CardTitle>
+          {evidence.length === 0 ? (
+            <p className="text-sm text-muted">재원을 정하면 규칙에 따라 표시됩니다.</p>
+          ) : (
+            <ul className="space-y-1 text-sm" data-testid="evidence-requirements">
+              {evidence.map((e) => (
+                <li key={e.id} className="flex items-center justify-between gap-2">
+                  <span>{EVIDENCE_LABEL[e.type] ?? e.type}{e.type === "beneficiary_roster" ? ` (${e.required ? "필수" : "선택"})` : !e.required ? " (권장)" : ""}</span>
+                  <span className="tabular text-xs text-muted">{e.due_date ? `~${dateColumnToString(e.due_date).slice(5)}` : ""} · 제출 {e._count.items}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
 
       <Card>
         <CardTitle className="mb-3">사업 진척도</CardTitle>

@@ -26,6 +26,10 @@
     "fixtures:minutes": "tsx scripts/fixtures/generate-minutes.ts"
   },
   "dependencies": {
+    "@fullcalendar/core": "6.1.21",
+    "@fullcalendar/daygrid": "6.1.21",
+    "@fullcalendar/interaction": "6.1.21",
+    "@fullcalendar/react": "6.1.21",
     "@kgb/rules": "workspace:*",
     "@node-rs/argon2": "2.2.2",
     "@prisma/adapter-pg": "7.10.1",

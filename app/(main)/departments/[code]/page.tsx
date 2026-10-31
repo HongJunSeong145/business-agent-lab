@@ -1,3 +1,4 @@
+import { todayKst } from "@/lib/clock";
 import { notFound } from "next/navigation";
 import { Plus } from "lucide-react";
 import type { Prisma } from "@/lib/generated/prisma/client";
@@ -60,7 +61,7 @@ export default async function DepartmentPage({ params, searchParams }: { params:
     const rank = (g: typeof a) => (!g.project ? 1 : ["done", "cancelled"].includes(g.project.status) ? 2 : 0);
     return rank(a) - rank(b);
   });
-  const today = kstDateString();
+  const today = todayKst();
   const filtered = Boolean(sp.assignee || sp.status || sp.from || sp.to || sp.project);
 
   return (

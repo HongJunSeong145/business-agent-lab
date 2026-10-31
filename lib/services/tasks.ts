@@ -5,6 +5,7 @@ import { assertCan, can, isLeader, type Actor, type TaskResource } from "@/lib/a
 import { writeAudit } from "@/lib/audit/log";
 import { effectiveProgress, nextAutoStatus, taskReadiness, wouldCreateCycle, type DependencyType } from "@kgb/rules";
 import { ServiceError } from "./invitations";
+import { recalcProjectSchedule } from "./schedule";
 
 /**
  * 업무 서비스 (PART 4 업무, D3·D7·D10, 4-3).
@@ -246,6 +247,10 @@ export async function updateTask(db: Db, actor: ActorT, id: string, raw: unknown
     const before = { title: t.title, status: t.status, due_date: t.due_date, due_state: t.due_state, weight: Number(t.weight), departments: t.departments.map((d) => `${d.role}:${d.department_id}`), assignees: res.assigneeIds };
     await writeAudit(tx, { actorId: actor.userId, action: "task.update", entityType: "task", entityId: id, diff: { before, after: v } });
     if (v.allow_draft_start !== undefined || v.status !== undefined) await recomputeReadiness(tx, actor.termId, { taskIds: [id], dependentsOf: [id] });
+    // 마감 확정·변경 → 같은 사업의 제안 마감·실현 가능 여부 재계산 (5-3 ⑨)
+    if (t.project_id && (v.due_date !== undefined || v.due_state !== undefined || v.status !== undefined)) {
+      await recalcProjectSchedule(tx, actor.termId, t.project_id, "proposed");
+    }
     return tx.task.findUniqueOrThrow({ where: { id } });
   });
 }
@@ -321,6 +326,7 @@ export async function setCompleted(db: Db, actor: ActorT, id: string, completed:
     });
     await writeAudit(tx, { actorId: actor.userId, action: completed ? "task.complete" : "task.uncomplete", entityType: "task", entityId: id });
     await recomputeReadiness(tx, actor.termId, { taskIds: completed ? [] : [id], dependentsOf: [id] });
+    if (t.project_id && t.template_key) await recalcProjectSchedule(tx, actor.termId, t.project_id, "proposed");
     return tx.task.findUniqueOrThrow({ where: { id } });
   });
 }

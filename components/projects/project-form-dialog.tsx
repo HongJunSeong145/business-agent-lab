@@ -21,11 +21,12 @@ export type ProjectFormValues = {
   uses_external_vendor: boolean;
   school: string; // 교비 계획액(빈 값이면 재원 아님)
   student_fee: string;
+  promo_tier: string;
 };
 
 const EMPTY: ProjectFormValues = {
   title: "", category: "event", event_start: "", event_end: "", venue: "", expected_beneficiaries: "", host: "", organizer: "",
-  uses_external_vendor: false, school: "", student_fee: "",
+  uses_external_vendor: false, school: "", student_fee: "", promo_tier: "",
 };
 
 const CATEGORIES = [["event", "행사"], ["promotion", "홍보"], ["partnership", "제휴"], ["welfare", "복지"], ["admin", "행정"], ["other", "기타"]];
@@ -49,7 +50,7 @@ export function ProjectFormDialog({ trigger, initial }: { trigger: React.ReactNo
     const body = {
       title: s("title"), category: s("category"), event_start: s("event_start"), event_end: s("event_end"), venue: s("venue"),
       expected_beneficiaries: s("expected_beneficiaries"), host: s("host"), organizer: s("organizer"),
-      uses_external_vendor: fd.get("uses_external_vendor") === "on", funding,
+      uses_external_vendor: fd.get("uses_external_vendor") === "on", funding, promo_tier: s("promo_tier"),
     };
     setPending(true);
     setError(null);
@@ -106,7 +107,18 @@ export function ProjectFormDialog({ trigger, initial }: { trigger: React.ReactNo
                 </div>
               ))}
             </fieldset>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="uses_external_vendor" defaultChecked={v.uses_external_vendor} /> 외부업체·대행사 이용</label>
+            <div className="flex flex-wrap items-end gap-6">
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="uses_external_vendor" defaultChecked={v.uses_external_vendor} /> 외부업체·대행사 이용</label>
+              <div>
+                <Label htmlFor="p-tier">홍보물 등급</Label>
+                <Select id="p-tier" name="promo_tier" defaultValue={v.promo_tier} className="w-56">
+                  <option value="">미정 (저비용으로 계산)</option>
+                  <option value="free">무비용 (온라인 카드뉴스 등)</option>
+                  <option value="low">저비용 (인쇄 포스터·현수막)</option>
+                  <option value="high">고비용 (30만 원 이상 또는 300개 이상)</option>
+                </Select>
+              </div>
+            </div>
             <FormMessage>{error}</FormMessage>
             <div className="flex justify-end gap-2">
               <Dialog.Close asChild><Button type="button" variant="secondary">취소</Button></Dialog.Close>

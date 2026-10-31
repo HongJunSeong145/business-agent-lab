@@ -35,6 +35,8 @@ export default defineConfig({
       STORAGE_DRIVER: "db",
       WORKER_MODE: "inline",
       UPLOAD_MAX_MB: "50",
+      // 날짜에 따라 결과가 달라지는 T5·T6 를 언제 실행해도 같게 (APP_ENV=test 에서만 적용)
+      KGB_FAKE_TODAY: "2026-10-31",
     },
   },
 });

@@ -2,7 +2,8 @@ import Link from "next/link";
 import { Card, CardTitle } from "@/components/ui/card";
 import { DemoBadge, Badge } from "@/components/common/badges";
 import { ComingSoon, EmptyState } from "@/components/common/empty-state";
-import { DeptChip } from "@/components/dept/dept-chip";
+import { UpcomingList, type UpcomingItem } from "./upcoming-list";
+import { QuarterCalendar } from "@/components/calendar/quarter-calendar";
 import { ProjectProgressBar } from "@/components/projects/project-progress-bar";
 import type { ProjectProgress } from "@kgb/rules";
 import { ProgressBar } from "@/components/dept/progress-bar";
@@ -71,68 +72,27 @@ export function RecentMeetings({ meetings }: { meetings: { id: string; title: st
   );
 }
 
-export function QuarterCalendarShell({
-  quarters,
-  current,
-}: {
-  quarters: Record<string, string>;
-  current: 1 | 2 | 3 | 4;
-}) {
+export function QuarterCalendarCard({ quarters, current, today }: { quarters: Record<string, string>; current: 1 | 2 | 3 | 4; today: string }) {
   return (
     <Card>
       <div className="mb-3 flex items-center justify-between">
         <CardTitle>분기 캘린더</CardTitle>
-        <span className="text-xs text-muted">오늘 기준 {current}분기</span>
+        <span className="flex items-center gap-2 text-xs text-muted">
+          <span className="rounded border border-dashed border-muted px-1">제안</span>
+          <span className="rounded border border-muted px-1">확정</span>
+          <span>오늘 기준 {current}분기</span>
+        </span>
       </div>
-      <div role="tablist" aria-label="분기 선택" className="mb-4 grid grid-cols-4 gap-1 rounded-lg bg-bg p-1">
-        {([1, 2, 3, 4] as const).map((q) => (
-          <div
-            key={q}
-            role="tab"
-            aria-selected={q === current}
-            className={`rounded-md px-2 py-1.5 text-center text-sm ${q === current ? "bg-surface font-semibold shadow-sm" : "text-muted"}`}
-          >
-            <span className="block">{q}분기</span>
-            <span className="tabular block text-[11px] text-muted">
-              {quarters[`q${q}_start`]?.slice(5).replace("-", ".")}~{quarters[`q${q}_end`]?.slice(5).replace("-", ".")}
-            </span>
-          </div>
-        ))}
-      </div>
-      <EmptyState title="월 그리드 캘린더는 Phase 4에서 제공됩니다" description="분기 날짜는 기수 설정값을 사용합니다(설정 화면에서 수정 — Phase 4)." />
+      <QuarterCalendar quarters={quarters} initialQuarter={current} today={today} />
     </Card>
   );
 }
 
-export function Upcoming30({
-  items,
-  today,
-}: {
-  items: { id: string; title: string; due: string; dueState: string; leadCode: DepartmentCode | null; assignees: string[] }[];
-  today: string;
-}) {
+export function Upcoming30({ items, today, canEdit }: { items: UpcomingItem[]; today: string; canEdit: boolean }) {
   return (
     <Card>
       <CardTitle className="mb-3">향후 30일 일정</CardTitle>
-      {items.length === 0 ? (
-        <EmptyState title="30일 안에 마감되는 업무가 없습니다" />
-      ) : (
-        <ul className="space-y-2">
-          {items.map((t) => (
-            <li key={t.id}>
-              <Link
-                href={`?task=${t.id}`}
-                scroll={false}
-                className={`flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-bg ${t.dueState === "proposed" ? "border border-dashed border-border" : "border border-transparent"}`}
-              >
-                {t.leadCode ? <DeptChip code={t.leadCode} /> : null}
-                <span className="min-w-0 flex-1 truncate">{t.title}</span>
-                <span className="tabular text-xs text-muted">{dDayLabel(t.due, today)}</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
+      {items.length === 0 ? <EmptyState title="30일 안에 마감되는 업무가 없습니다" /> : <UpcomingList items={items} today={today} canEdit={canEdit} />}
     </Card>
   );
 }
