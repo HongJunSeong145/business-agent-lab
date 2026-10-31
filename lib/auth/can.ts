@@ -53,6 +53,8 @@ export type Action =
   | { type: "task.complete"; task: TaskResource }
   | { type: "plan.approve" }
   | { type: "plan.edit" }
+  | { type: "partner.edit" }
+  | { type: "monitor.run" }
   | { type: "reference.view" }
   | { type: "reference.add"; task: TaskResource }
   | { type: "finance.edit" }
@@ -114,6 +116,12 @@ export function can(actor: Actor, action: Action, settings: Settings = DEFAULT_S
 
     case "plan.edit": // 기획안 작성은 기획국(6-3), 결재는 회장·국장
       return actor.departmentCode === "planning";
+
+    case "partner.edit": // 제휴 후보 관리는 사무국(6-3)
+      return actor.departmentCode === "secretariat";
+
+    case "monitor.run":
+      return false;
 
     case "finance.edit":
       return actor.departmentCode === "finance";

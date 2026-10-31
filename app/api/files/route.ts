@@ -47,6 +47,10 @@ export async function GET(req: Request) {
     (await prisma.planVersion
       .findFirst({ where: { file_key: key, plan: { project: { term_id: user.termId, deleted_at: null } } }, select: { file_name: true, file_mime: true } })
       .then((v) => (v ? { original_name: v.file_name, mime: v.file_mime } : null))) ??
+    (await prisma.evidenceItem.findFirst({
+      where: { storage_key: key, deleted_at: null, project: { term_id: user.termId, deleted_at: null } },
+      select: { original_name: true, mime: true },
+    })) ??
     (await prisma.term
       .findFirst({ where: { id: user.termId, banner_image_key: key }, select: { id: true } })
       .then(async (t) => (t ? { original_name: "banner", mime: sniffImageMime(await getStorage().get(key)) } : null)));

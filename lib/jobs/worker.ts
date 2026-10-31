@@ -5,6 +5,7 @@ import { runExtractJob } from "./extract";
 import { runAnalyzeJob, runProposeJob } from "@/lib/ai/agents";
 import { runEvaluateJob } from "@/lib/ai/evaluate";
 import { runReferenceJob } from "@/lib/ai/reference";
+import { runMonitor } from "@/lib/services/monitor";
 import { getProvider } from "@/lib/ai/runtime";
 import { enqueueAnalysisAfterExtract } from "@/lib/services/analysis";
 import { todayKst } from "@/lib/clock";
@@ -56,6 +57,14 @@ async function start() {
   await boss.work<{ aiJobId: string }>(QUEUES.reference, { batchSize: 1, pollingIntervalSeconds: 1 }, async ([job]) => {
     if (job) await runReferenceJob(prisma, getProvider(), job.data.aiJobId);
   });
+  // A7: 매일 09:00 KST — 기수마다 점검(월요일은 주간 요약 포함)
+  await boss.work(QUEUES.monitor, { batchSize: 1 }, async () => {
+    const terms = await prisma.term.findMany({ where: { is_current: true }, select: { id: true } });
+    for (const t of terms) await runMonitor(prisma, t.id, { provider: getProvider() });
+  });
+  if ((process.env.WORKER_MODE ?? "inline") !== "off" && process.env.APP_ENV !== "test") {
+    await boss.schedule(QUEUES.monitor, "0 9 * * *", {}, { tz: "Asia/Seoul" });
+  }
   g.kgbSweeper = setInterval(() => void sweepStaleJobs().catch((e) => console.error("[worker] 점검 오류:", e)), 60_000);
   g.kgbSweeper.unref();
   console.log("[worker] 작업 처리기 시작");
