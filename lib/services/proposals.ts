@@ -87,7 +87,12 @@ export async function decideProposals(db: Db, actor: ActorT, raw: unknown) {
     const now = new Date();
     const projectIdOfKey = new Map<string, string>();
     const touchedProjects = new Set<string>();
-    const created = { projects: 0, tasks: 0, updates: 0, deadlines: 0 };
+    const created = { projects: 0, tasks: 0, updates: 0, deadlines: 0, skipped: 0 };
+    // 대상 업무가 이미 삭제된 제안은 막지 않고 건너뛴다(다른 항목 승인은 그대로 진행) — 실시간 수정·삭제와 충돌 방지
+    const skip = async (id: string) => {
+      await tx.proposal.update({ where: { id }, data: { status: "superseded", decided_by: actor.userId, decided_at: new Date() } });
+      created.skipped++;
+    };
 
     const mark = (id: string, edited: boolean) =>
       tx.proposal.update({ where: { id }, data: { status: edited ? "edited_approved" : "approved", decided_by: actor.userId, decided_at: now } });
@@ -126,7 +131,10 @@ export async function decideProposals(db: Db, actor: ActorT, raw: unknown) {
       } else if (p.kind === "update_project") {
         const ch = (p.payload as { changes: Record<string, unknown> }).changes;
         const cur = await tx.project.findFirst({ where: { id: p.target_id!, term_id: actor.termId, deleted_at: null }, include: { funding_sources: true } });
-        if (!cur || cur.status === "cancelled") throw new ServiceError("변경할 사업을 찾을 수 없습니다(취소·삭제됨).");
+        if (!cur || cur.status === "cancelled") {
+          await skip(p.id);
+          continue;
+        }
         const data: Prisma.ProjectUpdateInput = {};
         if ("event_start" in ch) {
           data.event_start = ch.event_start ? new Date(`${ch.event_start}T00:00:00Z`) : null;
@@ -148,7 +156,14 @@ export async function decideProposals(db: Db, actor: ActorT, raw: unknown) {
       } else if (p.kind === "new_task") {
         const pl = p.payload as NewTaskPayload;
         const projectId = pl.project_id ?? (p.project_key ? projectIdOfKey.get(p.project_key) ?? null : null);
-        if (p.project_key && !projectId) throw new ServiceError(`'${pl.title}': 이 업무의 사업 제안을 먼저(또는 함께) 승인하세요.`);
+        if (p.project_key && !projectId) {
+          // 기존 사업이 그사이 삭제·취소됐으면 건너뜀(다른 항목은 계속), 새 사업 제안이 승인 안 됐으면 안내
+          if (/^[0-9a-f-]{36}$/.test(p.project_key) && (await tx.project.findFirst({ where: { id: p.project_key, OR: [{ deleted_at: { not: null } }, { status: "cancelled" }] } }))) {
+            await skip(p.id);
+            continue;
+          }
+          throw new ServiceError(`'${pl.title}': 이 업무의 사업 제안을 먼저(또는 함께) 승인하세요.`);
+        }
         const lead = a.edits?.lead_department ?? pl.lead_department;
         const support = (a.edits?.support_departments ?? pl.support_departments).filter((d) => d !== lead);
         const due = a.edits?.due_date !== undefined ? a.edits.due_date : pl.due_date;
@@ -171,7 +186,10 @@ export async function decideProposals(db: Db, actor: ActorT, raw: unknown) {
       } else if (p.kind === "deadline") {
         const pl = p.payload as DeadlinePayload;
         const task = await tx.task.findFirst({ where: { id: p.target_id!, deleted_at: null } });
-        if (!task) throw new ServiceError("대상 업무를 찾을 수 없습니다.");
+        if (!task) {
+          await skip(p.id);
+          continue;
+        }
         const due = a.edits?.due_date ?? pl.due_date;
         await tx.task.update({ where: { id: task.id }, data: { due_date: new Date(`${due}T00:00:00Z`), due_state: "confirmed", due_reason: `마감 변경 요청 승인${pl.reason ? ` — ${pl.reason}` : ""}` } });
         await writeAudit(tx, { actorId: actor.userId, action: "task.update", entityType: "task", entityId: task.id, diff: { before: { due_date: task.due_date }, after: { due_date: due }, via_proposal: p.id } });
@@ -187,7 +205,10 @@ export async function decideProposals(db: Db, actor: ActorT, raw: unknown) {
         if (a.edits?.support_departments) ch.support_departments = a.edits.support_departments;
         if (a.edits?.due_date !== undefined) ch.due_date = a.edits.due_date;
         const task = await tx.task.findFirst({ where: { id: p.target_id!, deleted_at: null }, include: { departments: true } });
-        if (!task) throw new ServiceError("수정할 업무를 찾을 수 없습니다(삭제됨).");
+        if (!task) {
+          await skip(p.id);
+          continue;
+        }
         const data: Prisma.TaskUpdateInput = {};
         if (typeof ch.title === "string") data.title = ch.title;
         if (typeof ch.description === "string") data.description = ch.description;
@@ -212,7 +233,10 @@ export async function decideProposals(db: Db, actor: ActorT, raw: unknown) {
         created.updates++;
       } else if (p.kind === "cancel") {
         const task = await tx.task.findFirst({ where: { id: p.target_id!, deleted_at: null } });
-        if (!task) throw new ServiceError("취소할 업무를 찾을 수 없습니다(삭제됨).");
+        if (!task) {
+          await skip(p.id);
+          continue;
+        }
         if (!task.is_completed && task.status !== "cancelled") {
           await tx.task.update({ where: { id: task.id }, data: { status: "cancelled" } });
           await writeAudit(tx, { actorId: actor.userId, action: "task.update", entityType: "task", entityId: task.id, diff: { before: { status: task.status }, after: { status: "cancelled" }, reason: (p.payload as { reason?: string }).reason, via_proposal: p.id } });

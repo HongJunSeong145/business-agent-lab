@@ -18,6 +18,7 @@ import { ProgressBar } from "@/components/dept/progress-bar";
 import { TaskFormDialog } from "@/components/tasks/task-form-dialog";
 import { TaskRow } from "@/components/tasks/task-row";
 import { BulkProvider } from "@/components/tasks/bulk";
+import { TrashPanel } from "@/components/tasks/trash-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -123,6 +124,7 @@ export default async function DepartmentPage({ params, searchParams }: { params:
         })
       )}
       </BulkProvider>
+      {can(user, { type: "task.create" }) ? <TrashPanel query={`dept=${dc}`} /> : null}
     </div>
   );
 }

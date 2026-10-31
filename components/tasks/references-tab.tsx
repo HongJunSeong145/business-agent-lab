@@ -1,8 +1,9 @@
 "use client";
 
+import { useLive } from "@/components/layout/live-refresh";
 import { Dialog } from "radix-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Copy, Download, ExternalLink, Sparkles, Trash2, X } from "lucide-react";
+import { Copy, Download, ExternalLink, Pencil, Sparkles, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/field";
 import { toast } from "@/components/ui/toast";
@@ -14,7 +15,7 @@ type Item = {
   id: string; kind: "link" | "file" | "ai_example"; origin: "user" | "ai_search" | "ai_generated"; title: string; url: string | null;
   summary: string | null; relevance: string | null; points: string[]; content: string | null; format: "markdown" | "html" | "svg" | null;
   needsReview: boolean; requestId: string | null; outdated: boolean; fileName: string | null; preview: string | null; fileUrl: string | null; downloadUrl: string | null;
-  by: string | null; at: string; canDelete: boolean;
+  by: string | null; at: string; canDelete: boolean; canEdit?: boolean;
 };
 type Req = {
   id: string; status: "queued" | "running" | "done" | "failed"; instruction: string | null; by: string | null; at: string; error: string | null;
@@ -44,6 +45,7 @@ export function ReferencesTab({ taskId, onChanged }: { taskId: string; onChanged
       setError((e as Error).message);
     }
   }, [taskId]);
+  useLive(() => void load()); // 다른 화면·다른 사람이 바꾼 내용 실시간 반영
   useEffect(() => {
     let cancelled = false;
     api<Data>(`/api/tasks/${taskId}/references`)
@@ -160,7 +162,7 @@ export function ReferencesTab({ taskId, onChanged }: { taskId: string; onChanged
                 <a href={i.url!} target="_blank" rel="noopener noreferrer nofollow" className="inline-flex items-start gap-1 font-medium underline">
                   {i.title} <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 </a>
-                <DeleteButton i={i} onChanged={after} />
+                <EditButton i={i} onChanged={after} /><DeleteButton i={i} onChanged={after} />
               </div>
               <p className="text-xs text-muted break-all">{i.url}</p>
               {i.summary ? <p className="mt-1">{i.summary}</p> : null}
@@ -193,12 +195,59 @@ export function ReferencesTab({ taskId, onChanged }: { taskId: string; onChanged
                 {i.summary ? <p className="text-xs text-muted">{i.summary}</p> : null}
                 <p className="text-xs text-muted">{i.by} · {time(i.at)}</p>
               </div>
-              <DeleteButton i={i} onChanged={after} />
+              <EditButton i={i} onChanged={after} /><DeleteButton i={i} onChanged={after} />
             </li>
           ))}
         </ul>
       </section>
     </div>
+  );
+}
+
+/** 레퍼런스 고치기: 제목·요약·링크·AI 예시안 본문(다듬어 쓰기) */
+function EditButton({ i, onChanged }: { i: Item; onChanged: () => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  if (!i.canEdit) return null;
+  if (!open) {
+    return (
+      <button className="text-muted hover:text-text" aria-label={`레퍼런스 수정: ${i.title}`} onClick={() => setOpen(true)}>
+        <Pencil className="h-4 w-4" />
+      </button>
+    );
+  }
+  return (
+    <form
+      className="fixed inset-x-4 top-20 z-[70] mx-auto max-w-2xl space-y-2 rounded-xl border border-border bg-surface p-4 shadow-xl"
+      aria-label={`레퍼런스 수정: ${i.title}`}
+      onSubmit={async (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.currentTarget);
+        const body: Record<string, unknown> = { title: fd.get("title"), summary: fd.get("summary") || null };
+        if (i.kind === "link") body.url = fd.get("url") || null;
+        if (i.content !== null) body.content = fd.get("content") ?? "";
+        setBusy(true);
+        try {
+          await api(`/api/references/${i.id}`, { method: "PATCH", body });
+          toast("레퍼런스를 고쳤습니다.");
+          setOpen(false);
+          await onChanged();
+        } catch (err) {
+          toast((err as Error).message, { tone: "error" });
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <label className="block text-sm">제목<input name="title" aria-label="레퍼런스 제목" defaultValue={i.title} required className="mt-1 w-full rounded border border-border px-2 py-1" /></label>
+      <label className="block text-sm">요약·메모<textarea name="summary" aria-label="레퍼런스 요약" defaultValue={i.summary ?? ""} rows={2} className="mt-1 w-full rounded border border-border px-2 py-1" /></label>
+      {i.kind === "link" ? <label className="block text-sm">링크<input name="url" aria-label="레퍼런스 링크" type="url" defaultValue={i.url ?? ""} className="mt-1 w-full rounded border border-border px-2 py-1" /></label> : null}
+      {i.content !== null ? <label className="block text-sm">본문<textarea name="content" aria-label="레퍼런스 본문" defaultValue={i.content} rows={14} className="mt-1 w-full rounded border border-border px-2 py-1 font-mono text-xs" /></label> : null}
+      <div className="flex justify-end gap-2">
+        <Button type="button" size="sm" variant="secondary" onClick={() => setOpen(false)}>취소</Button>
+        <Button type="submit" size="sm" disabled={busy}>{busy ? "저장 중…" : "저장"}</Button>
+      </div>
+    </form>
   );
 }
 
@@ -245,7 +294,7 @@ function Example({ i, onChanged }: { i: Item; onChanged: () => Promise<void> }) 
         <span className="ml-auto flex items-center gap-2">
           <button className="text-muted hover:text-text" aria-label={`복사: ${i.title}`} onClick={() => void navigator.clipboard.writeText(content).then(() => toast("복사했습니다."))}><Copy className="h-4 w-4" /></button>
           <button className="text-muted hover:text-text" aria-label={`내려받기: ${i.title}`} onClick={download}><Download className="h-4 w-4" /></button>
-          <DeleteButton i={i} onChanged={onChanged} />
+          <EditButton i={i} onChanged={onChanged} /><DeleteButton i={i} onChanged={onChanged} />
         </span>
       </div>
       <div className={cn("mt-2", !open && "max-h-60 overflow-hidden")}>

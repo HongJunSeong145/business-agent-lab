@@ -61,7 +61,26 @@ export function SummaryView({ meetingId, summary, version, model, canEdit }: { m
               </Button>
             </span>
           ) : (
-            <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>정리본 편집</Button>
+            <span className="flex gap-2">
+              <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>정리본 편집</Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                title="고친 정리본으로 업무 제안만 다시 만듭니다(전체 재분석보다 비용이 적음). 이미 승인한 업무는 다시 제안하지 않습니다."
+                onClick={async () => {
+                  if (!window.confirm("이 정리본으로 업무 제안을 다시 만들까요?\n아직 처리하지 않은 제안은 새 제안으로 바뀝니다. 이미 승인해 만든 업무는 그대로입니다.")) return;
+                  try {
+                    await api(`/api/meetings/${meetingId}/repropose`, { method: "POST" });
+                    toast("정리본으로 업무 제안을 다시 만드는 중입니다. 끝나면 검토 대기에 올라옵니다.");
+                    router.refresh();
+                  } catch (e) {
+                    toast((e as Error).message, { tone: "error" });
+                  }
+                }}
+              >
+                이 정리본으로 제안 다시 만들기
+              </Button>
+            </span>
           )
         ) : null}
       </div>

@@ -1,5 +1,7 @@
 "use client";
 
+import { useLive } from "@/components/layout/live-refresh";
+import { deleteTaskWithUndo } from "./task-actions";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -83,6 +85,7 @@ export function TaskDrawerBody({ id, onTitle, initialTab }: { id: string; onTitl
     }
   }, [id, onTitle]);
 
+  useLive(() => void load()); // 다른 화면·다른 사람이 바꾼 내용 실시간 반영
   useEffect(() => {
     let cancelled = false;
     api<Detail>(`/api/tasks/${id}`)
@@ -432,8 +435,8 @@ export function TaskDrawerBody({ id, onTitle, initialTab }: { id: string; onTitl
               variant="ghost"
               className="text-danger"
               onClick={() => {
-                if (!window.confirm("이 업무를 삭제할까요? 후속 업무의 선행 관계도 함께 풀립니다.")) return;
-                void run(() => api(`/api/tasks/${id}`, { method: "DELETE" }), "업무를 삭제했습니다.").then(() => {
+                void deleteTaskWithUndo(id, t.title, () => router.refresh(), { ask: true }).then((ok) => {
+                  if (!ok) return;
                   const q = new URLSearchParams(window.location.search);
                   q.delete("task");
                   router.replace(`${window.location.pathname}${q.size ? `?${q}` : ""}`, { scroll: false });

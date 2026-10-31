@@ -18,7 +18,6 @@ export async function PATCH(req: Request, { params }: P) {
 
 export async function DELETE(_req: Request, { params }: P) {
   return withUser(async (u) => {
-    await deleteTask(prisma, u, (await params).id);
-    return Response.json({ ok: true });
+    return Response.json({ ok: true, ...(await deleteTask(prisma, u, (await params).id)) });
   });
 }

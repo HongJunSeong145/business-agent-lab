@@ -269,6 +269,40 @@ export async function approvePlan(db: Db, actor: ActorT, projectId: string) {
   });
 }
 
+/**
+ * 결재 취소 — 잘못 결재했거나 다시 고쳐야 할 때. 가장 최근 결재를 되돌린다:
+ * 그 결재로 완료 처리된 기획안 업무를 다시 진행 중으로, 후속 업무(홍보물·매뉴얼 등)는 다시 결재 대기 차단,
+ * 그 결재본 기준 재배정 대기 제안은 정리. 이전에 결재한 버전이 있으면 그 버전이 다시 기준이 된다.
+ */
+export async function revokePlanApproval(db: Db, actor: ActorT, projectId: string) {
+  assertCan(actor, { type: "plan.approve" });
+  return db.$transaction(async (tx) => {
+    const { project, plan } = await loadPlan(tx, actor.termId, projectId);
+    const approved = [...plan.versions].filter((v) => v.approved_at).sort((a, b) => b.approved_at!.getTime() - a.approved_at!.getTime());
+    const last = approved[0];
+    if (!last) throw new ServiceError("결재된 기획안이 없습니다.");
+    await tx.planVersion.update({ where: { id: last.id }, data: { approved_at: null, approved_by: null } });
+    await tx.plan.update({ where: { id: plan.id }, data: { status: approved.length > 1 ? "approved" : "draft" } });
+    const log = await tx.activityLog.findFirst({ where: { action: "plan.approve", entity_type: "project", entity_id: project.id }, orderBy: { created_at: "desc" } });
+    const completed = ((log?.diff as { completed?: string[] } | null)?.completed ?? []) as string[];
+    if (approved.length === 1) {
+      for (const id of completed) {
+        const t = await tx.task.findFirst({ where: { id, deleted_at: null, is_completed: true } });
+        if (!t) continue;
+        await tx.task.update({ where: { id }, data: { is_completed: false, completed_by: null, completed_at: null, status: "in_progress" } });
+        await tx.progressHistory.create({ data: { task_id: id, field: "completed", old_value: "true", new_value: "false", actor: "user", actor_user_id: actor.userId, reason: `기획안 v${last.version_no} 결재 취소` } });
+      }
+    }
+    const stale = await tx.proposal.updateMany({ where: { status: "pending", source_type: "plan", source_id: last.id }, data: { status: "superseded" } });
+    await tx.aiJob.updateMany({ where: { type: "plan_rebase", status: "queued", idempotency_key: `plan_rebase:${last.id}` }, data: { status: "failed", error: "결재 취소", finished_at: new Date() } });
+    const planTaskIds = (await tx.task.findMany({ where: { project_id: project.id, template_key: { in: ["PLN_DRAFT", "PLN_APPROVAL"] }, deleted_at: null }, select: { id: true } })).map((t) => t.id);
+    await recomputeReadiness(tx, actor.termId, { dependentsOf: planTaskIds });
+    await syncProjectCompletion(tx, actor.termId, project.id);
+    await writeAudit(tx, { actorId: actor.userId, action: "plan.revoke", entityType: "project", entityId: project.id, diff: { version: last.version_no, reopened: approved.length === 1 ? completed : [], supersededProposals: stale.count } });
+    return { versionNo: last.version_no, supersededProposals: stale.count };
+  });
+}
+
 /** 반려 (사유 필수) → 작성자 알림 */
 export async function rejectPlan(db: Db, actor: ActorT, projectId: string, reasonRaw: unknown) {
   assertCan(actor, { type: "plan.approve" });

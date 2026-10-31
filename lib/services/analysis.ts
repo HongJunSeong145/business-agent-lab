@@ -41,6 +41,28 @@ export async function requestAnalysis(db: Db, actor: Actor & { termId: string },
   return { aiJobId: job.id };
 }
 
+/**
+ * 고친 정리본으로 업무 제안만 다시 만들기(A2 만 — 전체 재분석보다 저렴). 이전 대기 제안은 대체되고,
+ * 이미 승인해 만든 업무는 다시 제안하지 않는다(삭제한 것은 다시 제안).
+ */
+export async function requestRepropose(db: Db, actor: Actor & { termId: string }, meetingId: string, available = aiAvailable()) {
+  assertCan(actor, { type: "meeting.reanalyze" }, await getPermissionSettings(db, actor.termId));
+  if (!available) throw new ServiceError("AI 일시 사용 불가 — 업무는 직접 만들 수 있습니다.", 503);
+  const m = await db.meeting.findFirst({ where: { id: meetingId, term_id: actor.termId, deleted_at: null }, include: { analyses: { take: 1, orderBy: { version: "desc" } } } });
+  if (!m) throw new ServiceError("회의록을 찾을 수 없습니다.", 404);
+  if (!m.analyses[0]) throw new ServiceError("정리본이 없어 제안을 만들 수 없습니다. 먼저 AI 분석을 하세요.");
+  const running = await db.aiJob.count({ where: { type: { in: ["analyze_meeting", "propose_work"] }, status: { in: ["queued", "running"] }, payload: { path: ["meetingId"], equals: meetingId } } });
+  if (running > 0) throw new ServiceError("이미 분석 중입니다.");
+  const job = await db.$transaction(async (tx) => {
+    const j = await tx.aiJob.create({ data: { type: "propose_work", payload: { meetingId }, idempotency_key: `propose:${meetingId}:summary-v${m.analyses[0]!.version}:${Date.now()}` } });
+    await tx.meeting.update({ where: { id: meetingId }, data: { status: "analyzing" } });
+    await writeAudit(tx, { actorId: actor.userId, action: "meeting.repropose", entityType: "meeting", entityId: meetingId, diff: { summaryVersion: m.analyses[0]!.version } });
+    return j;
+  });
+  await dispatchJob(job.id, "propose_work");
+  return { aiJobId: job.id };
+}
+
 /** 회의록의 최근 분석 작업 상태 (화면 표시용) */
 export async function latestAnalysisJob(db: Db, meetingId: string) {
   return db.aiJob.findFirst({

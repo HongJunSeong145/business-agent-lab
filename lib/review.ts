@@ -18,6 +18,8 @@ export type ReviewItem = {
   evidence: ReviewEvidence[];
   payload: Record<string, unknown>;
   before: Record<string, unknown> | null;
+  /** 대상 업무의 지금 마감(제안 뒤 국서 공간에서 바뀌었을 수 있음) — 마감 변경·업무 변경·취소 항목만 */
+  currentDue?: string | null;
   /** 이 항목이 속한 주관 국서(새 업무는 제안값, 기존 업무 대상이면 그 업무의 주관 국서). 사업 단위 항목은 null */
   dept: string | null;
 };
@@ -41,7 +43,7 @@ export async function loadReview(termId: string): Promise<ReviewGroup[]> {
     prisma.project.findMany({ where: { term_id: termId, id: { in: [...new Set(props.flatMap((p) => [p.target_id, p.project_key]))].filter((x): x is string => Boolean(x && /^[0-9a-f-]{36}$/.test(x))) } }, select: { id: true, title: true } }),
     prisma.task.findMany({
       where: { id: { in: props.filter((p) => ["deadline", "update_task", "cancel"].includes(p.kind)).map((p) => p.target_id!) } },
-      select: { id: true, title: true, departments: { where: { role: "lead" }, select: { department: { select: { code: true } } } } },
+      select: { id: true, title: true, due_date: true, deleted_at: true, departments: { where: { role: "lead" }, select: { department: { select: { code: true } } } } },
     }),
   ]);
   const groups = new Map<string, ReviewGroup>();
@@ -70,6 +72,10 @@ export async function loadReview(termId: string): Promise<ReviewGroup[]> {
       evidence: (p.evidence as ReviewEvidence[] | null) ?? [],
       payload,
       before: (p.before_snapshot as Record<string, unknown> | null) ?? null,
+      currentDue: (() => {
+        const t = tasks.find((x) => x.id === p.target_id);
+        return t?.due_date ? dateColumnToString(t.due_date) : t ? null : undefined;
+      })(),
       dept:
         p.kind === "new_task"
           ? String(payload.lead_department ?? "")

@@ -457,17 +457,61 @@ export async function removeDependency(db: Db, actor: ActorT, taskId: string, de
   });
 }
 
-/** 업무 삭제(소프트 삭제 4-1) — 후속 업무의 차단 해제 */
+/**
+ * 업무 삭제(소프트 삭제 4-1) — 연결된 모든 것을 함께 정리한다:
+ * 후속 업무 차단 해제, 이 업무를 대상으로 한 대기 제안(마감 변경·업무 변경·취소) 정리, 사업 완료 상태 재계산.
+ * 진척도·캘린더·30일 일정은 업무 표 하나에서 계산되므로 바로 반영된다. '되살리기'로 되돌릴 수 있다.
+ */
 export async function deleteTask(db: Db, actor: ActorT, id: string) {
   assertCan(actor, { type: "task.create" });
-  await loadTask(db, actor.termId, id);
-  await db.$transaction(async (tx) => {
-    const dependents = await tx.taskDependency.findMany({ where: { depends_on_task_id: id }, select: { task_id: true } });
+  const t = await loadTask(db, actor.termId, id);
+  return db.$transaction(async (tx) => {
+    const dependents = await tx.taskDependency.findMany({ where: { depends_on_task_id: id }, select: { task_id: true, type: true } });
+    const own = await tx.taskDependency.findMany({ where: { task_id: id }, select: { depends_on_task_id: true, type: true } });
     await tx.task.update({ where: { id }, data: { deleted_at: new Date() } });
     await tx.taskDependency.deleteMany({ where: { OR: [{ task_id: id }, { depends_on_task_id: id }] } });
-    await writeAudit(tx, { actorId: actor.userId, action: "task.delete", entityType: "task", entityId: id });
+    const stale = await tx.proposal.updateMany({ where: { status: "pending", target_id: id }, data: { status: "superseded" } });
+    await tx.referenceRequest.updateMany({ where: { task_id: id, status: "queued" }, data: { status: "failed", error: "업무가 삭제되어 취소했습니다." } });
+    // 되살리기를 위해 끊은 선후관계를 기록
+    await writeAudit(tx, { actorId: actor.userId, action: "task.delete", entityType: "task", entityId: id, diff: { title: t.title, dependents, dependencies: own, supersededProposals: stale.count } });
     await recomputeReadiness(tx, actor.termId, { taskIds: dependents.map((d) => d.task_id) });
-    await syncProjectCompletion(tx, actor.termId, (await tx.task.findUnique({ where: { id }, select: { project_id: true } }))?.project_id);
+    await syncProjectCompletion(tx, actor.termId, t.project_id);
+    return { projectId: t.project_id, supersededProposals: stale.count };
+  });
+}
+
+/** 삭제한 업무 되살리기 — 끊었던 선후관계(상대 업무가 살아 있는 것만)와 차단 상태·사업 완료 상태를 다시 계산 */
+export async function restoreTask(db: Db, actor: ActorT, id: string) {
+  assertCan(actor, { type: "task.create" });
+  const t = await db.task.findFirst({ where: { id, deleted_at: { not: null }, departments: { some: { role: "lead", department: { term_id: actor.termId } } } } });
+  if (!t) throw new ServiceError("되살릴 업무를 찾을 수 없습니다.", 404);
+  return db.$transaction(async (tx) => {
+    await tx.task.update({ where: { id }, data: { deleted_at: null } });
+    const log = await tx.activityLog.findFirst({ where: { action: "task.delete", entity_type: "task", entity_id: id }, orderBy: { created_at: "desc" } });
+    const diff = (log?.diff ?? {}) as { dependents?: { task_id: string; type: string }[]; dependencies?: { depends_on_task_id: string; type: string }[] };
+    const alive = new Set((await tx.task.findMany({ where: { id: { in: [...(diff.dependents ?? []).map((d) => d.task_id), ...(diff.dependencies ?? []).map((d) => d.depends_on_task_id)] }, deleted_at: null }, select: { id: true } })).map((x) => x.id));
+    for (const d of diff.dependencies ?? []) if (alive.has(d.depends_on_task_id)) await tx.taskDependency.create({ data: { task_id: id, depends_on_task_id: d.depends_on_task_id, type: d.type } }).catch(() => undefined);
+    for (const d of diff.dependents ?? []) if (alive.has(d.task_id)) await tx.taskDependency.create({ data: { task_id: d.task_id, depends_on_task_id: id, type: d.type } }).catch(() => undefined);
+    await writeAudit(tx, { actorId: actor.userId, action: "task.restore", entityType: "task", entityId: id, diff: { title: t.title } });
+    await recomputeReadiness(tx, actor.termId, { taskIds: [id, ...(diff.dependents ?? []).map((d) => d.task_id)] });
+    await syncProjectCompletion(tx, actor.termId, t.project_id);
+    return { projectId: t.project_id };
+  });
+}
+
+/** 최근 삭제한 업무(되살리기 목록) — 최근 60일 */
+export async function listDeletedTasks(db: Db, actor: ActorT, opts: { projectId?: string; deptCode?: string } = {}) {
+  assertCan(actor, { type: "task.create" });
+  return db.task.findMany({
+    where: {
+      deleted_at: { not: null, gte: new Date(Date.now() - 60 * 86400_000) },
+      ...(opts.projectId ? { project_id: opts.projectId } : {}),
+      project: opts.projectId ? { deleted_at: null } : undefined,
+      departments: { some: { role: "lead", department: { term_id: actor.termId, ...(opts.deptCode ? { code: opts.deptCode } : {}) } } },
+    },
+    orderBy: { deleted_at: "desc" },
+    take: 50,
+    select: { id: true, title: true, deleted_at: true, project: { select: { id: true, title: true } } },
   });
 }
 

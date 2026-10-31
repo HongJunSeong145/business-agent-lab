@@ -12,6 +12,7 @@ import { Select } from "@/components/ui/field";
 import { Badge, DemoBadge } from "@/components/common/badges";
 import { EmptyState } from "@/components/common/empty-state";
 import { ProjectFormDialog } from "@/components/projects/project-form-dialog";
+import { TrashPanel } from "@/components/tasks/trash-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -92,6 +93,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           </table>
         </Card>
       )}
+      {can(user, { type: "project.cancel" }) ? <TrashPanel /> : null}
     </div>
   );
 }
