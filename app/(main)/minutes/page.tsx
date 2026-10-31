@@ -17,6 +17,7 @@ import { UploadMinutesDialog } from "@/components/minutes/upload-dialog";
 import { StatusPoller } from "@/components/minutes/status-poller";
 import { ReextractButton } from "@/components/minutes/reextract-button";
 import { AnalyzeButton } from "@/components/minutes/analyze-button";
+import { DeleteMeetingButton } from "@/components/minutes/delete-meeting-button";
 import { SummaryView } from "@/components/minutes/summary-view";
 import { aiAvailable } from "@/lib/ai/runtime";
 import { latestAnalysisJob } from "@/lib/services/analysis";
@@ -179,9 +180,12 @@ export default async function MinutesPage({ searchParams }: { searchParams: Prom
                   AI 일시 사용 불가 — 회의록 열람과 업무 직접 만들기는 그대로 쓸 수 있습니다.
                 </p>
               ) : null}
-              {hasText && ai && canReextract && detail.status !== "analyzing" && !(job && (job.status === "queued" || job.status === "running")) ? (
-                <div className="mb-4 flex justify-end">
-                  <AnalyzeButton meetingId={detail.id} reanalyze={Boolean(analysis)} />
+              {canReextract ? (
+                <div className="mb-4 flex flex-wrap justify-end gap-2">
+                  <DeleteMeetingButton meetingId={detail.id} title={detail.title} />
+                  {hasText && ai && detail.status !== "analyzing" && !(job && (job.status === "queued" || job.status === "running")) ? (
+                    <AnalyzeButton meetingId={detail.id} reanalyze={Boolean(analysis)} />
+                  ) : null}
                 </div>
               ) : null}
               {detail.status === "failed" ? (

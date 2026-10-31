@@ -158,8 +158,23 @@ export async function runProposeJob(db: Db, provider: AiProvider, aiJobId: strin
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`propose:${termId}`}))`;
       // 재분석: 이전 대기 제안은 대체(superseded), 이미 승인된 항목은 다시 제안하지 않는다(6-4, D9)
       await tx.proposal.updateMany({ where: { source_type: "meeting", source_id: meetingId, status: "pending" }, data: { status: "superseded" } });
+      // 승인된 항목이라도 그 결과(업무·사업)를 지웠다면 다시 제안한다 — '삭제 후 재검사'
+      const approved = await tx.proposal.findMany({
+        where: { dedupe_key: { in: rows.map((r) => r.dedupe_key) }, status: { in: ["approved", "edited_approved"] } },
+        select: { kind: true, dedupe_key: true, payload: true, tasks: { where: { deleted_at: null }, select: { id: true } } },
+      });
+      const liveProjects = new Set(
+        (await tx.project.findMany({
+          where: { deleted_at: null, id: { in: approved.map((a) => (a.payload as { created_project_id?: string } | null)?.created_project_id).filter(Boolean) as string[] } },
+          select: { id: true },
+        })).map((x) => x.id),
+      );
       const decided = new Set(
-        (await tx.proposal.findMany({ where: { dedupe_key: { in: rows.map((r) => r.dedupe_key) }, status: { in: ["approved", "edited_approved"] } }, select: { dedupe_key: true } })).map((r) => r.dedupe_key),
+        approved
+          .filter((a) =>
+            a.kind === "new_task" ? a.tasks.length > 0 : a.kind === "new_project" ? liveProjects.has((a.payload as { created_project_id?: string } | null)?.created_project_id ?? "") : true,
+          )
+          .map((a) => a.dedupe_key),
       );
       const fresh = rows.filter((r) => !decided.has(r.dedupe_key));
       const created = await tx.proposal.createMany({
