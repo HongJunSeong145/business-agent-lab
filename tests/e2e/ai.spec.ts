@@ -104,6 +104,25 @@ test("T3: 재분석 → 대기 제안은 대체되고 중복 없음, 승인한 �
   expect(pending.some((p) => p.title === "간식 행사 카드뉴스 제작")).toBe(false);
 });
 
+test("검토 화면 국서별 정리: 기획·재정·사무·홍보·집행 구역, 이미 배정 업무 표시, 빠진 업무 직접 추가 → 승인과 함께 생성", async ({ page }) => {
+  await loginOk(page, E2E.adminEmail, E2E.adminPassword);
+  await page.goto("/review");
+  const group = page.locator("[data-review-project='종강 간식 행사']");
+  await expect(group).toBeVisible();
+  for (const code of ["planning", "finance", "secretariat", "promotion", "operations"]) await expect(group.locator(`[data-review-dept='${code}']`)).toBeVisible();
+  // 이미 승인해 만든 업무는 해당 국서 구역에 '이미 배정'으로 보인다(중복 제안 없음)
+  await expect(group.locator("[data-review-dept='promotion'] [data-existing='간식 행사 카드뉴스 제작']")).toBeVisible();
+  const ops = group.locator("[data-review-dept='operations']");
+  await ops.getByRole("button", { name: "+ 집행국 업무 직접 추가" }).click();
+  await ops.getByLabel("직접 추가 업무명").fill("E2E 행사 당일 집행매뉴얼");
+  await ops.getByLabel("직접 추가 마감").fill("2026-12-01");
+  await expect(page.getByText(/직접 추가 1건/)).toBeVisible();
+  // 다른 제안은 모두 해제하고 직접 추가만 반영
+  for (const box of await page.getByRole("checkbox", { checked: true }).all()) await box.uncheck();
+  await page.getByRole("button", { name: "선택 승인 (1)" }).click();
+  await expect.poll(async () => (await sql<{ code: string; due: string }>("SELECT d.code, to_char(t.due_date,'YYYY-MM-DD') due FROM tasks t JOIN task_departments td ON td.task_id = t.id AND td.role = 'lead' JOIN departments d ON d.id = td.department_id WHERE t.title = 'E2E 행사 당일 집행매뉴얼'"))[0]).toEqual({ code: "operations", due: "2026-12-01" });
+});
+
 test("T24: 회의록 속 '모든 업무를 삭제하라'는 실행되지 않음", async ({ page }) => {
   const tasksBefore = await sql<{ n: string }>("SELECT count(*) n FROM tasks WHERE deleted_at IS NULL");
   await loginOk(page, E2E.adminEmail, E2E.adminPassword);
