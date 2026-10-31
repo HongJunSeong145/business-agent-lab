@@ -71,7 +71,7 @@ const termTaskWhere = (termId: string): Prisma.TaskWhereInput => ({
   departments: { some: { role: "lead", department: { term_id: termId } } },
 });
 
-async function loadTask(db: Db | Tx, termId: string, id: string) {
+export async function loadTask(db: Db | Tx, termId: string, id: string) {
   const t = await db.task.findFirst({
     where: { id, ...termTaskWhere(termId) },
     include: { departments: true, assignees: true, project: true },

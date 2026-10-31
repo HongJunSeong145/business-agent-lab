@@ -137,7 +137,12 @@ export default async function MinutesPage({ searchParams }: { searchParams: Prom
             <EmptyState title="회의록을 선택하세요" />
           ) : (
             <article aria-label="회의록 상세">
-              <StatusPoller meetingId={detail.id} status={detail.status} />
+              <StatusPoller
+                meetingId={detail.id}
+                status={detail.status}
+                // 추출 직후 분석 작업이 막 시작되려는 순간에 화면을 열었을 때도 결과를 따라간다
+                expectAnalysis={ai && hasText && !analysis && detail.status === "extracted" && (!job || job.status === "queued" || job.status === "running")}
+              />
               <header className="mb-4 flex flex-wrap items-start justify-between gap-2">
                 <div>
                   <h2 className="text-lg font-semibold">{detail.title}</h2>

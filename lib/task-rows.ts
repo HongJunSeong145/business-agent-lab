@@ -25,7 +25,8 @@ export type TaskRowData = {
   weight: number;
   blockedReasons: string[];
   startedOnDraft: boolean;
-  can: { complete: boolean; progress: boolean };
+  deliverableCount: number;
+  can: { complete: boolean; progress: boolean; upload: boolean };
 };
 
 export async function loadTaskRows(actor: Actor & { termId: string }, where: Prisma.TaskWhereInput): Promise<TaskRowData[]> {
@@ -36,6 +37,7 @@ export async function loadTaskRows(actor: Actor & { termId: string }, where: Pri
       departments: { include: { department: { select: { code: true } } } },
       assignees: { include: { user: { select: { id: true, display_name: true } } } },
       dependencies: { include: { depends_on: { select: { title: true, status: true, is_completed: true, ai_progress: true, manual_progress: true, deleted_at: true } } } },
+      _count: { select: { deliverables: { where: { deleted_at: null } } } },
     },
     orderBy: [{ due_date: { sort: "asc", nulls: "last" } }, { created_at: "asc" }],
   });
@@ -65,7 +67,12 @@ export async function loadTaskRows(actor: Actor & { termId: string }, where: Pri
       weight: Number(t.weight),
       blockedReasons: t.status === "blocked" ? r.reasons : [],
       startedOnDraft: t.started_on_draft_plan,
-      can: { complete: can(actor, { type: "task.complete", task: res }), progress: can(actor, { type: "task.adjustProgress", task: res }) },
+      deliverableCount: t._count.deliverables,
+      can: {
+        complete: can(actor, { type: "task.complete", task: res }),
+        progress: can(actor, { type: "task.adjustProgress", task: res }),
+        upload: can(actor, { type: "deliverable.upload", task: res }) && t.status !== "cancelled",
+      },
     };
   });
 }

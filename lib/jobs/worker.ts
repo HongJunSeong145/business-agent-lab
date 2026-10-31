@@ -3,6 +3,7 @@ import { getStorage } from "@/lib/storage";
 import { dispatchJob, getBoss, QUEUES } from "./queue";
 import { runExtractJob } from "./extract";
 import { runAnalyzeJob, runProposeJob } from "@/lib/ai/agents";
+import { runEvaluateJob } from "@/lib/ai/evaluate";
 import { getProvider } from "@/lib/ai/runtime";
 import { enqueueAnalysisAfterExtract } from "@/lib/services/analysis";
 import { todayKst } from "@/lib/clock";
@@ -47,6 +48,9 @@ async function start() {
   });
   await boss.work<{ aiJobId: string }>(QUEUES.propose, { batchSize: 1, pollingIntervalSeconds: 1 }, async ([job]) => {
     if (job) await runProposeJob(prisma, getProvider(), job.data.aiJobId);
+  });
+  await boss.work<{ aiJobId: string }>(QUEUES.evaluate, { batchSize: 1, pollingIntervalSeconds: 1 }, async ([job]) => {
+    if (job) await runEvaluateJob(prisma, storage, getProvider(), job.data.aiJobId);
   });
   g.kgbSweeper = setInterval(() => void sweepStaleJobs().catch((e) => console.error("[worker] 점검 오류:", e)), 60_000);
   g.kgbSweeper.unref();

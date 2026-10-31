@@ -6,6 +6,7 @@ import { extractHwpx } from "./hwpx";
 import { normalizeText, meaningfulLength } from "./normalize";
 import { extractPdf } from "./pdf";
 import { decodeText } from "./text";
+import { extractPptx } from "./pptx";
 
 export { ExtractionError } from "./errors";
 
@@ -31,4 +32,10 @@ export async function extractMinutes(kind: MinutesKind, bytes: Uint8Array): Prom
     throw new ExtractionError("파일에서 읽을 수 있는 글자가 없습니다. 내용이 있는 파일인지 확인해 주세요.", "empty");
   }
   return { text, method: METHOD_FOR_KIND[kind] };
+}
+
+/** 작업물 텍스트 추출 (A6 입력·미리보기). 회의록과 같은 추출기 + PPTX */
+export async function extractDeliverableText(kind: MinutesKind | "pptx", bytes: Uint8Array): Promise<string> {
+  if (kind === "pptx") return normalizeText(extractPptx(bytes));
+  return (await extractMinutes(kind, bytes)).text;
 }

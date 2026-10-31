@@ -11,6 +11,7 @@ import { ProgressBar } from "@/components/dept/progress-bar";
 import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/client-api";
 import type { TaskRowData } from "@/lib/task-rows";
+import { postDeliverable } from "./deliverables-tab";
 import type { DepartmentCode } from "@/lib/design/tokens";
 import { cn, dDayLabel } from "@/lib/utils";
 
@@ -153,7 +154,7 @@ export function TaskRow({ task, today, deptCode }: { task: TaskRowData; today: s
         </Popover.Portal>
       </Popover.Root>
       <span className="col-start-2 flex items-center gap-1 justify-self-end md:col-start-auto">
-        <span className="inline-flex h-7 w-7 cursor-not-allowed items-center justify-center rounded text-muted opacity-50" title="작업물 업로드 — Phase 6 예정" aria-label="작업물 업로드(Phase 6 예정)"><Paperclip className="h-4 w-4" /></span>
+        <UploadDrop task={task} drawerHref={`${drawerHref}&tab=deliverables`} onUploaded={() => router.refresh()} />
         <span className="inline-flex h-7 w-7 cursor-not-allowed items-center justify-center rounded text-muted opacity-50" title="레퍼런스 — Phase 7 예정" aria-label="레퍼런스(Phase 7 예정)"><BookOpen className="h-4 w-4" /></span>
         <Link href={drawerHref} scroll={false} className="inline-flex h-7 w-7 items-center justify-center rounded hover:bg-surface" aria-label={`${task.title} 상세`}><ChevronRight className="h-4 w-4" /></Link>
       </span>
@@ -161,3 +162,47 @@ export function TaskRow({ task, today, deptCode }: { task: TaskRowData; today: s
   );
 }
 
+
+/** 📎 작업물: 누르면 드로어 작업물 탭, 파일을 끌어다 놓으면 바로 업로드(가장 최근 작업물의 새 버전 / 없으면 새 작업물) — 8-6 */
+function UploadDrop({ task, drawerHref, onUploaded }: { task: TaskRowData; drawerHref: string; onUploaded: () => void }) {
+  const [over, setOver] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const upload = async (f: File | undefined) => {
+    if (!f) return;
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.set("file", f);
+      fd.set("target", "latest");
+      const r = await postDeliverable(task.id, fd);
+      toast(`'${task.title}' 작업물 v${r.versionNo} 업로드 완료.${r.aiJobId ? " AI가 평가 중입니다." : ""}`);
+      onUploaded();
+    } catch (e) {
+      toast((e as Error).message, { tone: "error" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const label = `${task.title} 작업물${task.deliverableCount ? ` ${task.deliverableCount}개` : ""}${task.can.upload ? " — 파일을 끌어다 놓아 업로드" : ""}`;
+  return (
+    <span
+      className={cn("relative inline-flex", over && "rounded ring-2 ring-text")}
+      onDragOver={task.can.upload ? (e) => (e.preventDefault(), setOver(true)) : undefined}
+      onDragLeave={() => setOver(false)}
+      onDrop={
+        task.can.upload
+          ? (e) => {
+              e.preventDefault();
+              setOver(false);
+              void upload(e.dataTransfer.files[0]);
+            }
+          : undefined
+      }
+    >
+      <Link href={drawerHref} scroll={false} title={label} aria-label={label} className={cn("inline-flex h-7 min-w-7 items-center justify-center gap-0.5 rounded px-1 hover:bg-surface", busy && "animate-pulse")} data-testid="row-upload">
+        <Paperclip className="h-4 w-4" />
+        {task.deliverableCount ? <span className="tabular text-xs">{task.deliverableCount}</span> : null}
+      </Link>
+    </span>
+  );
+}
