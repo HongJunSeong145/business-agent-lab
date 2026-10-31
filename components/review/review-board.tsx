@@ -153,7 +153,7 @@ export function ReviewBoard({ groups }: { groups: ReviewGroup[] }) {
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface/95 backdrop-blur">
         <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-2 px-4 py-3">
           <span className="text-sm text-muted">
-            전체 {all.length}건 중 <strong className="text-text tabular">{selected.length}</strong>건 선택{validManual.length ? ` · 직접 추가 ${validManual.length}건` : ""} · 추론 항목은 기본 선택 해제
+            전체 {all.length}건 중 <strong className="text-text tabular">{selected.length}</strong>건 선택{validManual.length ? ` · 직접 추가 ${validManual.length}건` : ""}
           </span>
           <div className="flex gap-2">
             <Button variant="secondary" disabled={pending || all.length === 0} onClick={() => setRejectAll(true)}>모두 거절</Button>
@@ -304,6 +304,7 @@ function Row({ item: i, meetingId, checked, onToggle, edit, onEdit }: { item: Re
             {i.kind === "update_task" ? "마감" : "추천 마감"}
             <input aria-label="마감" type="date" className="h-7 rounded border border-border px-1" defaultValue={due ?? ""} onBlur={(e) => (e.target.value || null) !== ((p.due_date ?? ch.due_date ?? null) as string | null) && onEdit({ due_date: e.target.value || null })} />
           </label>
+          {!due ? <p className="text-warning-text" data-testid="due-missing">마감 근거 없음 — 직접 입력하세요(비워 두면 마감 없이 등록)</p> : null}
           {i.kind === "update_task" && i.before && "due_date" in i.before ? <p className="text-muted">지금 마감: {String(i.before.due_date ?? "없음")}</p> : null}
           {p.due_reason ? (
             <p className={cn("leading-snug", feasible ? "text-muted" : "text-danger")} title={String(p.due_reason)}>
