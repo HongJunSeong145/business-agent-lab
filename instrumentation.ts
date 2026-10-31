@@ -1,12 +1,7 @@
-/** 서버 시작 시 1회 실행 — 환경변수·AI 설정 검증 (지시서 3-4). 설정이 잘못되면 시작을 거부(프로세스 종료)한다. */
+/** 서버 시작 시 1회 실행 — Node 런타임에서만 시작 점검·워커를 불러온다 */
 export async function register() {
-  if (process.env.NEXT_RUNTIME !== "nodejs") return;
-  const { env } = await import("@/lib/env");
-  const { assertAiConfig } = await import("@/lib/ai/provider");
-  try {
-    assertAiConfig(env());
-  } catch (e) {
-    console.error(`[KGB_Agent] 서버 시작 거부: ${(e as Error).message}`);
-    process.exit(1);
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { onServerStart } = await import("./instrumentation-node");
+    await onServerStart();
   }
 }

@@ -32,7 +32,9 @@ export default defineConfig({
       AUTH_SECRET: "e2e-only-secret-0123456789abcdef-0123456789",
       AUTH_URL: `http://localhost:${PORT}`,
       AI_PROVIDER: "mock",
-      STORAGE_DRIVER: "local",
+      STORAGE_DRIVER: "db",
+      WORKER_MODE: "inline",
+      UPLOAD_MAX_MB: "50",
     },
   },
 });

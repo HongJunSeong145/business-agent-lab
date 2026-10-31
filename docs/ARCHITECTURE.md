@@ -101,7 +101,7 @@ flowchart TB
 | 비밀번호 해시 | argon2id (`@node-rs/argon2`) | |
 | 작업 큐 | pg-boss + `ai_jobs`(도메인 상태 기록) | ADR-005 |
 | 파일 저장 | `lib/storage` 추상화: `local`(dev/test) / `db`(개인용 배포 기본, Postgres bytea) / `s3`(확장) — 서명 URL 10분 | ADR-020 |
-| 텍스트 추출 | PDF: `unpdf`(pdf.js 기반) 우선 검토, `pdf-parse` 대안 / DOCX: `mammoth` / HWPX: ZIP+XML 파싱 / HWP: 최선 노력(`hwp.js` 계열 평가 후 결정) | Phase 2에서 샘플로 비교 후 확정 |
+| 텍스트 추출 | PDF: `unpdf`(위치 기반 줄 재구성, 2-up 소책자 인쇄 인식) / DOCX: `mammoth` / HWPX: ZIP+XML 직접 해석 / HWP: HWP 5.0 구조 직접 해석(최선 노력) / TXT: UTF-8·EUC-KR | ADR-022 |
 | 날짜 | 규칙 엔진은 `YYYY-MM-DD` 문자열 ↔ 정수 일수 변환만 사용(시간대 무관), 표시·"오늘" 계산은 `Asia/Seoul` (`@date-fns/tz`) | ADR-009 |
 | LLM | `@anthropic-ai/sdk`, `lib/ai/provider.ts` 추상화, 모델은 `LLM_MODEL`(Agent별 덮어쓰기 `LLM_MODEL_<AGENT>`) | ADR-010 |
 | 테스트 | Vitest(단위·통합), Playwright(E2E), `@vitest/coverage-v8`(규칙 엔진 분기 100%) | |

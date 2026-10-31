@@ -4,6 +4,7 @@ import { Dialog } from "radix-ui";
 import { X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 /**
  * 오른쪽 사이드 드로어 셸 (8-1, D12): URL 쿼리 ?task= / ?meeting= / ?project= 로 열리고 공유 가능.
@@ -13,7 +14,7 @@ const TYPES = ["task", "meeting", "project"] as const;
 type DrawerType = (typeof TYPES)[number];
 const TYPE_LABEL: Record<DrawerType, string> = { task: "업무", meeting: "회의록", project: "사업" };
 
-type DrawerData = { title: string; fields: { label: string; value: string }[] };
+type DrawerData = { title: string; fields: { label: string; value: string }[]; preview?: string | null; link?: { href: string; label: string } };
 
 export function DrawerHost() {
   const params = useSearchParams();
@@ -72,14 +73,22 @@ export function DrawerHost() {
             ) : current.error ? (
               <p role="alert" className="text-sm text-danger">{current.error}</p>
             ) : (
-              <dl className="grid grid-cols-[7rem_1fr] gap-y-2 text-sm">
-                {current.data!.fields.map((f) => (
-                  <div key={f.label} className="contents">
-                    <dt className="text-muted">{f.label}</dt>
-                    <dd>{f.value}</dd>
-                  </div>
-                ))}
-              </dl>
+              <div className="space-y-4">
+                <dl className="grid grid-cols-[7rem_1fr] gap-y-2 text-sm">
+                  {current.data!.fields.map((f) => (
+                    <div key={f.label} className="contents">
+                      <dt className="text-muted">{f.label}</dt>
+                      <dd className="break-words">{f.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+                {current.data!.preview ? (
+                  <pre className="max-h-[50vh] overflow-y-auto whitespace-pre-wrap rounded-lg bg-bg p-3 font-sans text-sm leading-relaxed">{current.data!.preview}</pre>
+                ) : null}
+                {current.data!.link ? (
+                  <Link href={current.data!.link.href} className="inline-block text-sm underline">{current.data!.link.label} →</Link>
+                ) : null}
+              </div>
             )}
           </div>
         </Dialog.Content>

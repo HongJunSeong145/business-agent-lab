@@ -1,0 +1,43 @@
+import { prisma } from "@/lib/db";
+import { getStorage } from "@/lib/storage";
+import { dispatchJob, getBoss, QUEUES } from "./queue";
+import { runExtractJob } from "./extract";
+
+const g = globalThis as unknown as { kgbWorker?: Promise<void>; kgbSweeper?: NodeJS.Timeout };
+
+/** 멈춘 작업 복구: 오래 queued 인 작업 재전송, 오래 running 인 작업(프로세스 중단 등)은 queued 로 되돌림 */
+export async function sweepStaleJobs(now = new Date()): Promise<number> {
+  await prisma.aiJob.updateMany({
+    where: { status: "running", started_at: { lt: new Date(now.getTime() - 10 * 60_000) } },
+    data: { status: "queued" },
+  });
+  const stale = await prisma.aiJob.findMany({
+    where: { status: "queued", updated_at: { lt: new Date(now.getTime() - 60_000) } },
+    take: 50,
+  });
+  for (const j of stale) {
+    await prisma.aiJob.update({ where: { id: j.id }, data: { updated_at: now } });
+    await dispatchJob(j.id, j.type);
+  }
+  return stale.length;
+}
+
+async function start() {
+  const boss = await getBoss();
+  const storage = getStorage();
+  await boss.work<{ aiJobId: string }>(QUEUES.extract, { batchSize: 1, pollingIntervalSeconds: 1 }, async ([job]) => {
+    if (job) await runExtractJob(prisma, storage, job.data.aiJobId);
+  });
+  g.kgbSweeper = setInterval(() => void sweepStaleJobs().catch((e) => console.error("[worker] 점검 오류:", e)), 60_000);
+  g.kgbSweeper.unref();
+  console.log("[worker] 작업 처리기 시작");
+}
+
+/** 워커 시작(프로세스당 1회). WORKER_MODE=inline 이면 웹 서버 안에서, separate 면 worker/index.ts 에서 호출 */
+export function startWorker(): Promise<void> {
+  g.kgbWorker ??= start().catch((e) => {
+    g.kgbWorker = undefined;
+    console.error("[worker] 시작 실패:", e instanceof Error ? e.message : e);
+  });
+  return g.kgbWorker;
+}

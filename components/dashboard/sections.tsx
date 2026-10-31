@@ -8,10 +8,7 @@ import { DEPARTMENTS, type DepartmentCode } from "@/lib/design/tokens";
 import type { DeptCard } from "@/lib/dashboard";
 import { dDayLabel, formatKoreanDate } from "@/lib/utils";
 
-const MEETING_STATUS: Record<string, string> = {
-  uploaded: "업로드됨", extracting: "추출 중", extracted: "추출 완료", analyzing: "분석 중",
-  analyzed: "검토 대기", reviewed: "완료", failed: "실패",
-};
+import { MEETING_STATUS_LABEL as MEETING_STATUS } from "@/lib/services/meetings";
 
 export function Banner({ title, subtitle, councilName, canEdit }: { title: string; subtitle: string | null; councilName: string; canEdit: boolean }) {
   return (
@@ -44,7 +41,11 @@ export function RecentMeetings({ meetings }: { meetings: { id: string; title: st
         <CardTitle>최근 회의록</CardTitle>
       </div>
       {meetings.length === 0 ? (
-        <EmptyState title="아직 회의록이 없습니다" description="회의록을 올리면 AI가 사업과 업무를 제안합니다." action={<ComingSoon phase={2} label="회의록 업로드" />} />
+        <EmptyState
+          title="아직 회의록이 없습니다"
+          description="상단의 '회의록 업로드'로 올리면 글자를 추출해 회의록 공간에 저장합니다."
+          action={<Link href="/minutes" className="text-sm underline">회의록 공간으로</Link>}
+        />
       ) : (
         <ul className="divide-y divide-border">
           {meetings.map((m) => (
@@ -63,6 +64,7 @@ export function RecentMeetings({ meetings }: { meetings: { id: string; title: st
           ))}
         </ul>
       )}
+      <Link href="/minutes" className="mt-3 block text-right text-xs text-muted hover:text-text hover:underline">전체 회의록 보기 →</Link>
     </Card>
   );
 }
