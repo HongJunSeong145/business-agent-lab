@@ -1,8 +1,10 @@
 import type { Env } from "@/lib/env";
 import { isDeployedEnv } from "@/lib/env";
+import { AnthropicProvider, ANTHROPIC_DEFAULT_MODEL } from "@/lib/ai/anthropic";
 
 /**
  * LLM 공급자 추상화 (지시서 3-2·6-1, ADR-010·021·026).
+ *  - anthropic: Claude API 직접 호출(lib/ai/anthropic.ts). 키는 ANTHROPIC_API_KEY 에만 둔다.
  *  - openrouter: OpenRouter(OpenAI 호환 Chat Completions)로 Claude 등 모델 호출. 키는 환경변수 OPENROUTER_API_KEY 에만 둔다.
  *  - mock: 결정적 응답(테스트·개발). staging/production 에서는 시작 거부.
  *  - none: AI 끔 — 수동 기능만(T25)
@@ -18,6 +20,8 @@ export type CompleteRequest = {
   prompt: string;
   schema: JsonSchema;
   maxTokens?: number;
+  /** 이미지(작업물 평가 A6 등) — 지원하는 공급자만 사용 */
+  images?: { mediaType: "image/png" | "image/jpeg" | "image/gif" | "image/webp"; base64: string }[];
   /** mock 공급자 전용 입력(실제 공급자는 무시) */
   mockContext?: unknown;
 };
@@ -32,7 +36,7 @@ export type CompleteResult = {
 };
 
 export interface AiProvider {
-  readonly name: "openrouter" | "mock" | "none";
+  readonly name: "anthropic" | "openrouter" | "mock" | "none";
   readonly available: boolean;
   readonly model: string;
   complete(req: CompleteRequest): Promise<CompleteResult>;
@@ -168,12 +172,15 @@ export class NoneProvider implements AiProvider {
 /** 지시서 3-4: mock 이 staging·production 에서 켜지면 시작 거부 */
 export function assertAiConfig(e: Pick<Env, "APP_ENV" | "AI_PROVIDER">): void {
   if (e.AI_PROVIDER === "mock" && isDeployedEnv(e.APP_ENV)) {
-    throw new Error(`AI_PROVIDER=mock 은 ${e.APP_ENV} 환경에서 사용할 수 없습니다. openrouter 또는 none 으로 설정하세요.`);
+    throw new Error(`AI_PROVIDER=mock 은 ${e.APP_ENV} 환경에서 사용할 수 없습니다. anthropic·openrouter 또는 none 으로 설정하세요.`);
   }
 }
 
 /** 키가 없으면 none 으로 동작(T25) */
-export function resolveAiMode(e: Pick<Env, "AI_PROVIDER" | "OPENROUTER_API_KEY">): "openrouter" | "mock" | "none" {
+export function resolveAiMode(
+  e: Pick<Env, "AI_PROVIDER" | "OPENROUTER_API_KEY" | "ANTHROPIC_API_KEY">,
+): "anthropic" | "openrouter" | "mock" | "none" {
+  if (e.AI_PROVIDER === "anthropic") return e.ANTHROPIC_API_KEY ? "anthropic" : "none";
   if (e.AI_PROVIDER === "openrouter") return e.OPENROUTER_API_KEY ? "openrouter" : "none";
   return e.AI_PROVIDER;
 }
@@ -181,13 +188,14 @@ export function resolveAiMode(e: Pick<Env, "AI_PROVIDER" | "OPENROUTER_API_KEY">
 export const DEFAULT_MODEL = "anthropic/claude-sonnet-4.5";
 
 export function createProvider(
-  e: Pick<Env, "APP_ENV" | "AI_PROVIDER" | "OPENROUTER_API_KEY" | "LLM_MODEL">,
+  e: Pick<Env, "APP_ENV" | "AI_PROVIDER" | "OPENROUTER_API_KEY" | "ANTHROPIC_API_KEY" | "LLM_MODEL">,
   mockHandlers?: Record<string, MockHandler>,
   opts?: { referer?: string; fetchImpl?: FetchLike },
 ): AiProvider {
   assertAiConfig(e);
   const mode = resolveAiMode(e);
   if (mode === "mock") return new MockProvider(mockHandlers);
+  if (mode === "anthropic") return new AnthropicProvider(e.ANTHROPIC_API_KEY!, e.LLM_MODEL || ANTHROPIC_DEFAULT_MODEL);
   if (mode === "openrouter") return new OpenRouterProvider(e.OPENROUTER_API_KEY!, e.LLM_MODEL || DEFAULT_MODEL, opts);
   return new NoneProvider();
 }

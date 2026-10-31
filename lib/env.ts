@@ -8,8 +8,9 @@ const schema = z.object({
   APP_ENV: z.enum(APP_ENVS).default("development"),
   DATABASE_URL: z.string().min(1, "DATABASE_URL 필요"),
   AUTH_SECRET: z.string().min(32, "AUTH_SECRET 은 32자 이상"),
-  AI_PROVIDER: z.enum(["openrouter", "mock", "none"]).default("none"),
+  AI_PROVIDER: z.enum(["anthropic", "openrouter", "mock", "none"]).default("none"),
   OPENROUTER_API_KEY: z.string().optional(),
+  ANTHROPIC_API_KEY: z.string().optional(),
   LLM_MODEL: z.string().optional(),
   /** AI 비용 원화 환산 (OpenRouter 는 USD 로 비용을 알려준다) */
   USD_KRW: z.coerce.number().positive().default(1400),

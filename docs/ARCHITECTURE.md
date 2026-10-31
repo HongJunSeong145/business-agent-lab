@@ -103,7 +103,7 @@ flowchart TB
 | 파일 저장 | `lib/storage` 추상화: `local`(dev/test) / `db`(개인용 배포 기본, Postgres bytea) / `s3`(확장) — 서명 URL 10분 | ADR-020 |
 | 텍스트 추출 | PDF: `unpdf`(위치 기반 줄 재구성, 2-up 소책자 인쇄 인식) / DOCX: `mammoth` / HWPX: ZIP+XML 직접 해석 / HWP: HWP 5.0 구조 직접 해석(최선 노력) / TXT: UTF-8·EUC-KR | ADR-022 |
 | 날짜 | 규칙 엔진은 `YYYY-MM-DD` 문자열 ↔ 정수 일수 변환만 사용(시간대 무관), 표시·"오늘" 계산은 `Asia/Seoul` (`@date-fns/tz`) | ADR-009 |
-| LLM | OpenRouter(OpenAI 호환 API, Claude 모델) — `lib/ai/provider.ts` 추상화(openrouter / mock / none), 모델은 `LLM_MODEL` | ADR-026 |
+| LLM | Anthropic Claude API(공식 SDK, 기본 `claude-opus-5-5`) 또는 OpenRouter — `lib/ai/provider.ts` 추상화(anthropic / openrouter / mock / none), 모델은 `LLM_MODEL` | ADR-026·028 |
 | 테스트 | Vitest(단위·통합), Playwright(E2E), `@vitest/coverage-v8`(규칙 엔진 분기 100%) | |
 | 배포 | **Render Blueprint**(`render.yaml`: web + Postgres, 워커는 web 내 inline 모드) / 대안 Railway(`Dockerfile`) | ADR-019, 사용자 계정 필요 |
 

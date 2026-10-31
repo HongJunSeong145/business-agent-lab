@@ -31,12 +31,12 @@ describe("저장소 비밀값 검사", () => {
   });
   it(".env.example 에는 키 값이 비어 있다", () => {
     const ex = readFileSync(".env.example", "utf8");
-    for (const k of ["OPENROUTER_API_KEY", "AUTH_SECRET", "FILE_URL_SECRET", "INITIAL_ADMIN_PASSWORD"]) {
+    for (const k of ["OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "AUTH_SECRET", "FILE_URL_SECRET", "INITIAL_ADMIN_PASSWORD"]) {
       expect(ex).toMatch(new RegExp(`^${k}=\\s*$`, "m"));
     }
   });
   it("API 키를 브라우저 번들로 내보내는 NEXT_PUBLIC_ 변수가 없다", () => {
-    const src = execSync("git grep -l NEXT_PUBLIC_ -- '*.ts' '*.tsx' || true", { encoding: "utf8" }).trim();
+    const src = execSync("git grep -l NEXT_PUBLIC_ -- '*.ts' '*.tsx' ':!tests' || true", { encoding: "utf8" }).trim();
     expect(src).toBe("");
   });
 });

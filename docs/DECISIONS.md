@@ -196,6 +196,13 @@ Phase 0에서 지시서 9-1·9-2 색 조합을 WCAG 2.x 공식으로 미리 계�
 
 ---
 
+
+## ADR-028. LLM 공급자 추가: Anthropic(Claude API) 직접 연결 — `확정(Phase 5 검증, 사용자 제공 키)`
+- **배경**: 사용자가 Anthropic 키를 제공했다. 개발 세션에서 `api.anthropic.com`은 접속되고 `openrouter.ai`는 막혀 있다.
+- **결정**: `AI_PROVIDER=anthropic`을 추가하고 **권장 기본값**으로 삼는다(OpenRouter는 선택지로 유지). 공식 SDK(`@anthropic-ai/sdk`), 기본 모델 `claude-opus-5-5`(`LLM_MODEL`로 변경 가능, 예: 비용을 줄이려면 `claude-sonnet-5-5`). 구조화 출력(`output_config.format` = JSON Schema)으로 JSON을 받고 기존대로 zod로 재검증한다. 최신 모델은 강제 함수 호출·temperature 를 받지 않으므로 쓰지 않는다. 거절(`stop_reason=refusal`)에 대비해 서버측 대체 모델(`fallbacks: "default"`, 베타 헤더 `server-side-fallback-2026-07-01`)을 켠다 — 거절 시 Anthropic이 권장 모델로 한 번 더 시도하며, 그래도 거절이면 '형식 오류'로 처리되어 분석 실패(다시 시도)로 표시된다. 이미지 입력을 지원해 Phase 6 작업물 평가(A6)에도 쓴다.
+- **비용**: 토큰 사용량 × 공개 단가(Opus 5.5 입력 $4·출력 $20 / 1M 토큰)로 계산해 `ai_runs`에 기록. 실측: 회의록 1건(A1+A2) 약 140~170원.
+- **키 관리**: ADR-026과 동일(`ANTHROPIC_API_KEY`는 `.env.local`·배포 환경변수에만, 코드에는 이름만, 유출 검사 테스트에 포함). SDK가 실행 환경의 `ANTHROPIC_BASE_URL`을 따라가지 않도록 주소를 코드에 명시한다.
+
 ## 미결정 사항 목록 (Phase 0 보고용)
 
 ### 지시서 PART 14 (답이 없으면 기본값으로 진행)
@@ -223,7 +230,7 @@ Phase 0에서 지시서 9-1·9-2 색 조합을 WCAG 2.x 공식으로 미리 계�
 | N5 | 홍보 등급 미정 시 제작 소요 | ✅ 결정: 저비용 가정, 저비용 = 4일 |
 | N6 | 최소 소요일(ADR-014 ⑩) | 기본값 적용: 기본 소요의 절반(올림) |
 | N7 | 진척도 막대 저대비 보완(ADR-015) | 기본값 적용: 채움 끝 ink 2px 경계선 + % 병기 |
-| N8 | 실제 AI 검증용 키 | ✅ OpenRouter 키 제공(ADR-026). **개발 세션 네트워크에서 `openrouter.ai` 허용 필요** |
+| N8 | 실제 AI 검증용 키 | ✅ Anthropic 키로 실제 모델 검증 완료(ADR-028). OpenRouter 키도 보관(네트워크 차단으로 미검증) |
 | N9 | 배포 계정 | Render 계정(ADR-019)은 사용자가 배포할 때 필요. 그 전까지는 이 컨테이너에서 로컬 실행 + Playwright로 검증 |
 | N10 | 역할 체계 | ✅ 결정: 부회장 없음, 국장 = 회장 동등 권한(ADR-016) |
 | N11 | 공휴일 목록 | 2026~2027 공휴일을 기본값으로 넣음 — **설정 › 규칙 파라미터·휴일에서 사용자 확인 필요** |
