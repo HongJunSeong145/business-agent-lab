@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { Bell, Search, Upload } from "lucide-react";
+import { getPermissionSettings } from "@/lib/settings";
+import { UploadMinutesDialog } from "@/components/minutes/upload-dialog";
 import { prisma } from "@/lib/db";
 import { can, isLeader, ROLE_LABEL } from "@/lib/auth/can";
 import type { SessionUser } from "@/lib/auth/session";
@@ -7,9 +9,10 @@ import { UserMenu } from "./user-menu";
 
 /** 상단 고정 바 (8-1) */
 export async function TopBar({ user }: { user: SessionUser }) {
-  const [unread, pending] = await Promise.all([
+  const [unread, pending, settings] = await Promise.all([
     prisma.notification.count({ where: { user_id: user.userId, read_at: null } }),
     isLeader(user) ? prisma.proposal.count({ where: { term_id: user.termId, status: "pending" } }) : Promise.resolve(0),
+    getPermissionSettings(prisma, user.termId),
   ]);
   const subtitle = [user.departmentName, user.positionTitle ?? ROLE_LABEL[user.role]].filter(Boolean).join(" · ");
 
@@ -36,14 +39,16 @@ export async function TopBar({ user }: { user: SessionUser }) {
               검토 대기 <strong className="tabular text-text">{pending}</strong>
             </span>
           ) : null}
-          {can(user, { type: "meeting.upload" }) ? (
-            <span
-              className="hidden h-9 cursor-not-allowed items-center gap-1.5 rounded-lg border border-dashed border-border px-3 text-sm text-muted sm:inline-flex"
-              title="회의록 업로드는 Phase 2에서 제공됩니다"
-              aria-disabled="true"
-            >
-              <Upload className="h-4 w-4" /> 회의록 업로드
-            </span>
+          <Link href="/minutes" className="hidden rounded-lg px-2.5 py-1.5 text-sm hover:bg-bg sm:inline">회의록</Link>
+          {can(user, { type: "meeting.upload" }, settings) ? (
+            <UploadMinutesDialog
+              maxMb={Number(process.env.UPLOAD_MAX_MB ?? 50)}
+              trigger={
+                <button className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-text px-3 text-sm font-medium text-white hover:bg-[#33383f]">
+                  <Upload className="h-4 w-4" /> <span className="hidden sm:inline">회의록 업로드</span>
+                </button>
+              }
+            />
           ) : null}
           <span className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg" aria-label={`읽지 않은 알림 ${unread}건`} title="알림 목록은 Phase 8에서 제공됩니다">
             <Bell className="h-5 w-5" />

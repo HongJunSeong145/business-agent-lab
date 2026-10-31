@@ -82,7 +82,12 @@ pnpm build && pnpm test:e2e
 - `pnpm test:rules`: 규칙 엔진 분기 커버리지 100% 검사
 - `pnpm test:e2e`: 실제 브라우저(Playwright)로 로그인·초대·권한 흐름 검사. 처음 한 번 `pnpm exec playwright install chromium` 필요
 
-## 4. 대안: Railway
+## 4. 백그라운드 작업(회의록 텍스트 추출)
+- 기본값 `WORKER_MODE=inline`: 웹 서버 안에서 작업 처리기가 함께 돈다(서비스 1개). 서버 로그에 `[worker] 작업 처리기 시작`이 보이면 정상입니다.
+- 사용량이 늘면 `WORKER_MODE=separate`로 바꾸고 별도 서비스에서 `npm run worker`를 실행합니다.
+- 작업 큐는 같은 PostgreSQL의 `pgboss` 스키마를 씁니다(별도 Redis 불필요).
+
+## 5. 대안: Railway
 Railway에서 저장소를 연결하고 PostgreSQL 플러그인을 추가한 뒤, 같은 명령을 설정하면 됩니다.
 - Build: `npx --yes pnpm@10.28.0 install --frozen-lockfile && npm run build`
 - Start: `npm run db:migrate && npm run admin:ensure && npm run start`

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth/session";
 import { dateColumnToString } from "@/lib/utils";
+import { MEETING_STATUS_LABEL } from "@/lib/services/meetings";
 
 export const dynamic = "force-dynamic";
 
@@ -38,14 +39,22 @@ export async function GET(req: Request) {
     });
   }
   if (type === "meeting") {
-    const m = await prisma.meeting.findFirst({ where: { id, term_id: user.termId, deleted_at: null } });
+    const m = await prisma.meeting.findFirst({
+      where: { id, term_id: user.termId, deleted_at: null },
+      include: { files: { orderBy: { created_at: "desc" }, take: 1 } },
+    });
     if (!m) return Response.json({ error: "not_found" }, { status: 404 });
+    const f = m.files[0];
+    const text = f?.extracted_text ?? "";
     return Response.json({
       title: m.title,
       fields: [
         { label: "회의일", value: dateColumnToString(m.meeting_date) },
-        { label: "상태", value: m.status },
+        { label: "상태", value: MEETING_STATUS_LABEL[m.status] ?? m.status },
+        { label: "파일", value: f?.original_name ?? "-" },
       ],
+      preview: f?.extraction_error ?? (text ? text.slice(0, 1200) + (text.length > 1200 ? "\n…" : "") : null),
+      link: { href: `/minutes?id=${m.id}`, label: "회의록 공간에서 전체 보기" },
     });
   }
   const p = await prisma.project.findFirst({ where: { id, term_id: user.termId, deleted_at: null } });

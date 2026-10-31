@@ -9,8 +9,12 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  experimental: {
+    // proxy 를 거치는 업로드 본문 버퍼 한도(기본 10MB) — 업로드 상한 50MB + multipart 여유
+    proxyClientMaxBodySize: "55mb",
+  },
   transpilePackages: ["@kgb/rules"],
-  serverExternalPackages: ["@node-rs/argon2", "pg"],
+  serverExternalPackages: ["@node-rs/argon2", "pg", "pg-boss", "unpdf", "mammoth"],
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
