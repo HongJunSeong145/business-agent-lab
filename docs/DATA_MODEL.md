@@ -32,20 +32,20 @@ erDiagram
   terms ||--o{ departments : has
   terms ||--o{ memberships : has
   users ||--o{ memberships : has
-  departments |o--o{ memberships : "소속(회장단은 null)"
+  departments |o--o{ memberships : "소속(회장·관리자는 null)"
   terms ||--o{ member_profiles : has
   users |o--o{ member_profiles : "가입자 연결(선택)"
-  users ||--o{ sessions : has
+  terms ||--o{ stored_files : ""
   users ||--o{ invitations : "초대함(invited_by)"
   terms ||--o{ settings : has
 
   councils { text name text university text college }
   terms { uuid council_id int term_number text name date start_date date end_date text banner_image_key text banner_title text banner_subtitle date q1_start date q1_end date q2_start date q2_end date q3_start date q3_end date q4_start date q4_end bool is_current }
-  departments { uuid term_id text code text name_ko text color_hex int display_order bool is_executive }
-  users { text email text password_hash text display_name text status timestamptz last_login_at timestamptz password_changed_at }
+  departments { uuid term_id text code text name_ko text color_hex int display_order }
+  users { text email text password_hash text display_name text status timestamptz last_login_at timestamptz password_changed_at int session_version }
   memberships { uuid user_id uuid term_id uuid department_id text role text position_title }
   member_profiles { uuid term_id uuid user_id text position_title text name text major text student_id text phone text gmail text school_email int display_order }
-  sessions { uuid user_id text token_hash timestamptz expires_at timestamptz last_seen_at text user_agent }
+  stored_files { text storage_key bytea data text mime bigint size }
   invitations { text email uuid term_id text role uuid department_id text token_hash timestamptz expires_at timestamptz accepted_at uuid invited_by }
   settings { uuid term_id text key jsonb value }
 ```
@@ -174,11 +174,10 @@ erDiagram
 | 테이블 | 값 도메인·제약 | 추가·변경 |
 |---|---|---|
 | `terms` | `UNIQUE(council_id, term_number)`, 기수당 `is_current` 1개(부분 고유 인덱스), 분기 날짜는 q1_start ≤ q1_end < q2_start … 순서 CHECK | — |
-| `departments` | `code ∈ {planning, finance, secretariat, promotion, operations, executive}`, `UNIQUE(term_id, code)`, `display_order` 기획1·재정2·사무3·홍보4·집행5·회장단 0 | 🆕 `executive`(회장단) 행, 🆕 `is_executive` — 학생회장 주관 업무(PRES_SUBMIT_SCHOOL 등)를 담기 위함. 국서 카드 5개에는 표시하지 않음 (ADR-011, 미결정 N3) |
-| `users` | `status ∈ {invited, active, disabled}`, `email` 소문자 정규화 UNIQUE | 🆕 `password_changed_at` |
-| `memberships` | `role ∈ {admin, president, vice_president, head, member}`, `UNIQUE(user_id, term_id)` | — |
+| `departments` | `code ∈ {planning, finance, secretariat, promotion, operations}`, `UNIQUE(term_id, code)`, `display_order` 기획1·재정2·사무3·홍보4·집행5 | 국서는 5개만(ADR-011) |
+| `users` | `status ∈ {invited, active, disabled}`, `email` 소문자 정규화 UNIQUE | 🆕 `password_changed_at`, 🆕 `session_version`(JWT 세션 일괄 무효화, ADR-004) |
+| `memberships` | `role ∈ {admin, president, head, member}`, `UNIQUE(user_id, term_id)`, `head`·`member`는 department_id 필수 | ✏️ `vice_president` 제외(ADR-016) |
 | `member_profiles` | 개인정보 테이블. 로그·AI 입력 금지 대상 | — |
-| 🆕 `sessions` | 토큰 원문은 쿠키에만, DB엔 SHA-256 해시. 유휴 7일 | ADR-004 |
 | 🆕 `invitations` | 토큰 해시, 72시간 만료, 1회용 | ADR-004 |
 | 🆕 `login_attempts` | 이메일은 해시로 저장(개인정보 최소화), 15분 창 5회 제한 | ADR-004 |
 | `settings` | `UNIQUE(term_id, key)`. 키 목록은 §4. 변경 이력은 `activity_logs`(action=`settings.update`, diff에 전·후 값) | — |
@@ -236,6 +235,7 @@ erDiagram
 | `notifications` | `severity ∈ {info, warn, critical}`, `UNIQUE(user_id, dedupe_key)` — dedupe_key에 날짜·등급 포함(`<규칙>:<대상>:<등급>:<YYYY-MM-DD>`)으로 하루 1회 & 등급 상승 시 새 알림 | — |
 | `activity_logs` | `actor_kind ∈ {user, ai, system}`, `diff`는 마스킹 함수 통과 필수 | ✏️ `actor_id`(user FK, null 허용) + `actor_kind` 분리 |
 | `ai_jobs` | `type ∈ {extract, analyze_meeting, propose_work, schedule, finance_rules, evaluate, reference, monitor, weekly_summary}`, `status ∈ {queued, running, succeeded, failed, waiting_budget}`, `UNIQUE(idempotency_key)` | 🆕 `pgboss_job_id` (ADR-005) |
+| 🆕 `stored_files` | `storage_key` UNIQUE, `data bytea` — `STORAGE_DRIVER=db`일 때만 사용 | ADR-020 |
 | `ai_runs` | 비용 추정은 원화(`cost_estimate_krw`) — 일 예산 비교용 | — |
 
 ---
@@ -255,7 +255,7 @@ erDiagram
 | `PURCHASE_LATEST_DAYS` | 3 | |
 | `EVIDENCE_PHOTO_GRACE_DAYS` | 1 | |
 | `DEFAULT_DURATIONS` | 지시서 5-2 표 | `{key: {default, min}}` — 🆕 `min`(infeasible 대안 (a) "최소 소요일까지 압축"에 필요, 지시서에 값 없음 → 기본 `ceil(default/2)`, 미결정 N6) |
-| `PROMO_DURATIONS` | 무비용 3 / 저비용 4+3 / 고비용 7+10 | |
+| `PROMO_DURATIONS` | 무비용 3 / **저비용 4** / 고비용 7+10 | 저비용은 사용자 결정 N5 |
 | `HOLIDAYS` | 대한민국 공휴일(대체공휴일 포함) + 학사 휴일 | 시드 후 사용자 확인 필요 |
 | 🆕 `STALL_DAYS` | 3 | 지시서 6-2 A7에만 언급 |
 | 🆕 `AI_DAILY_BUDGET_KRW` | staging 3000 | Q9 |
