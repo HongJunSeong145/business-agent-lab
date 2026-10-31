@@ -19,12 +19,14 @@ describe("taskReadiness (D7)", () => {
     expect(taskReadiness([{ type: "approval_required", predecessor: pre }], true)).toEqual({ blocked: false, reasons: [], startedOnDraft: true });
     // 허용해도 초안이 없으면 차단
     expect(taskReadiness([{ type: "approval_required", predecessor: p({ title: "기획안 결재" }) }], true).blocked).toBe(true);
+    // 기획안 모듈에 초안이 저장돼 있으면(선행 결재 업무가 아직 차단 상태여도) 선착수 가능 — D7
+    expect(taskReadiness([{ type: "approval_required", predecessor: p({ status: "blocked", has_draft: true }) }], true)).toEqual({ blocked: false, reasons: [], startedOnDraft: true });
     // 결재 완료면 선착수 표시 없이 해제
     expect(taskReadiness([{ type: "approval_required", predecessor: p({ is_completed: true }) }], true)).toEqual({ blocked: false, reasons: [], startedOnDraft: false });
   });
   it("draft_ok: 선행이 착수(진행·검토·완료·진척>0)되면 해제", () => {
     expect(taskReadiness([{ type: "draft_ok", predecessor: p() }], false)).toMatchObject({ blocked: true, reasons: ["'기획안 초안' 초안 대기"] });
-    for (const over of [{ status: "in_progress" }, { status: "review" }, { effective_progress: 10 }, { is_completed: true }]) {
+    for (const over of [{ status: "in_progress" }, { status: "review" }, { effective_progress: 10 }, { is_completed: true }, { has_draft: true }]) {
       expect(taskReadiness([{ type: "draft_ok", predecessor: p(over) }], false).blocked).toBe(false);
     }
   });

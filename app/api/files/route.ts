@@ -25,7 +25,7 @@ export async function GET(req: Request) {
     );
   }
 
-  // 소유 확인: 회의록 원본 또는 작업물 버전 — 현재 기수의 것만
+  // 소유 확인: 회의록 원본·작업물 버전·레퍼런스 파일·기획안 첨부 — 현재 기수의 것만
   const owner =
     (await prisma.meetingFile.findFirst({
       where: { storage_key: key, meeting: { term_id: user.termId, deleted_at: null } },
@@ -38,7 +38,14 @@ export async function GET(req: Request) {
         deliverable: { deleted_at: null, task: { deleted_at: null, departments: { some: { role: "lead", department: { term_id: user.termId } } } } },
       },
       select: { original_name: true, mime: true },
-    }));
+    })) ??
+    (await prisma.referenceItem.findFirst({
+      where: { storage_key: key, deleted_at: null, task: { deleted_at: null, departments: { some: { role: "lead", department: { term_id: user.termId } } } } },
+      select: { original_name: true, mime: true },
+    })) ??
+    (await prisma.planVersion
+      .findFirst({ where: { file_key: key, plan: { project: { term_id: user.termId, deleted_at: null } } }, select: { file_name: true, file_mime: true } })
+      .then((v) => (v ? { original_name: v.file_name, mime: v.file_mime } : null)));
   if (!owner) return Response.json({ error: "파일을 찾을 수 없습니다." }, { status: 404 });
   const data = await getStorage().get(key);
   if (!data) return Response.json({ error: "파일을 찾을 수 없습니다." }, { status: 404 });

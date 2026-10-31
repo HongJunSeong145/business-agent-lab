@@ -15,6 +15,7 @@ import type { DepartmentCode } from "@/lib/design/tokens";
 import { cn } from "@/lib/utils";
 import { useOptions } from "./use-options";
 import { DeliverablesTab } from "./deliverables-tab";
+import { ReferencesTab } from "./references-tab";
 
 type Detail = {
   task: {
@@ -31,6 +32,7 @@ type Detail = {
   readiness: Readiness;
   history: ({ at: string; by: string | null } & ({ kind: "progress"; field: string; old: string | null; new: string | null; reason: string | null } | { kind: "activity"; action: string; diff: unknown }))[];
   permissions: { edit: boolean; complete: boolean; progress: boolean; leader: boolean };
+  plan: { versionNo: number; isDraft: boolean } | null;
 };
 
 const STATUS: Record<string, string> = { blocked: "차단", todo: "할 일", in_progress: "진행 중", review: "검토", done: "완료", cancelled: "취소" };
@@ -167,7 +169,15 @@ export function TaskDrawerBody({ id, onTitle, initialTab }: { id: string; onTitl
           }}
         />
       ) : null}
-      {tab === "references" ? <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted">레퍼런스·예시안 제작 의뢰는 Phase 7에서 제공됩니다.</p> : null}
+      {tab === "references" ? (
+        <ReferencesTab
+          taskId={id}
+          onChanged={() => {
+            void load();
+            router.refresh();
+          }}
+        />
+      ) : null}
 
       {tab === "history" ? (
         <ol className="space-y-2 text-sm" aria-label="업무 이력">
@@ -366,6 +376,15 @@ export function TaskDrawerBody({ id, onTitle, initialTab }: { id: string; onTitl
               </form>
             ) : null}
           </section>
+
+          {t.project ? (
+            <p className="text-sm">
+              <span className="text-muted">참고 기획안 </span>
+              <Link href={`/projects/${t.project.id}#plan`} className="underline">
+                {d.plan ? `v${d.plan.versionNo} ${d.plan.isDraft ? "(초안 — 결재 전)" : "(결재본)"}` : "아직 없음"}
+              </Link>
+            </p>
+          ) : null}
 
           <section>
             <h3 className="mb-1 text-sm font-semibold">선행 업무</h3>

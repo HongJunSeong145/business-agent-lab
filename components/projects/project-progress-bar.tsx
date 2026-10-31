@@ -38,7 +38,7 @@ export function ProjectProgressBar({ progress, projectId }: { progress: ProjectP
               return (
                 <div key={s.code} style={{ width: `${s.share * 100}%` }} className="min-w-10" title={`${t.nameKo}: 업무 ${s.taskCount}건, ${pct}%`}>
                   {projectId ? (
-                    <Link href={`/departments/${s.code}?project=${projectId}`} className="block hover:opacity-90">{body}</Link>
+                    <Link href={`/departments/${s.code}?in_project=${projectId}`} className="block hover:opacity-90">{body}</Link>
                   ) : body}
                 </div>
               );

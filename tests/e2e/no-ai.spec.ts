@@ -37,4 +37,12 @@ test("T25: AI 없이도 회의록 업로드·열람과 업무 직접 만들기�
   await tab.getByRole("button", { name: "올리기" }).click();
   await expect(page.getByText("v1 업로드 완료.", { exact: true })).toBeVisible();
   await expect(tab.getByTestId("eval-status")).toContainText("AI 일시 사용 불가");
+
+  // 레퍼런스: 의뢰 버튼 대신 안내, 직접 추가는 가능
+  await page.getByRole("tab", { name: "레퍼런스" }).click();
+  const refs = page.getByTestId("references-tab");
+  await expect(refs.getByTestId("reference-ai-off")).toBeVisible();
+  await refs.getByLabel("레퍼런스 링크").fill("https://www.example.com/a");
+  await refs.getByRole("button", { name: "추가", exact: true }).click();
+  await expect(refs.getByRole("link", { name: "https://www.example.com/a" })).toBeVisible();
 });

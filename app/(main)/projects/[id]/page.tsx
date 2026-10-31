@@ -18,6 +18,7 @@ import { ProjectActions } from "@/components/projects/project-actions";
 import { ProjectProgressBar } from "@/components/projects/project-progress-bar";
 import { TaskFormDialog } from "@/components/tasks/task-form-dialog";
 import { SchedulePanel } from "@/components/projects/schedule-panel";
+import { PlanPanel } from "@/components/projects/plan-panel";
 import { getProjectSchedule } from "@/lib/services/schedule";
 import { loadRuleParams } from "@/lib/rule-params";
 import { PROMO_TIER_LABEL, withTax, type PromoTier } from "@kgb/rules";
@@ -134,6 +135,11 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         </Card>
       </div>
 
+      <Card id="plan" className="scroll-mt-20">
+        <CardTitle className="mb-3">기획안</CardTitle>
+        <PlanPanel projectId={id} />
+      </Card>
+
       <Card>
         <CardTitle className="mb-3">사업 진척도</CardTitle>
         <ProjectProgressBar progress={progress.get(id)!} projectId={id} />
@@ -153,7 +159,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             return (
               <div key={code} className="rounded-xl border border-border bg-surface" data-board-dept={code}>
                 <div className="rounded-t-xl px-3 py-2 text-sm font-semibold" style={{ backgroundColor: t.chipBg, color: t.ink }}>
-                  <Link href={`/departments/${code}?project=${id}`} className="hover:underline">{t.nameKo}</Link> <span className="font-normal">({mine.length})</span>
+                  <Link href={`/departments/${code}?in_project=${id}`} className="hover:underline">{t.nameKo}</Link> <span className="font-normal">({mine.length})</span>
                 </div>
                 <ul className="space-y-1 p-2">
                   {mine.length === 0 ? <li className="px-1 py-2 text-xs text-muted">업무 없음</li> : null}
@@ -198,7 +204,6 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <ComingSoon phase={7} label="기획안" />
         <ComingSoon phase={9} label="재정(예산·구입·증빙)" />
         <ComingSoon phase={9} label="제휴 진행표" />
       </div>

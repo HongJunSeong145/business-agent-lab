@@ -24,6 +24,13 @@ describe("Anthropic 공급자", () => {
       properties: { a: { type: "array", items: { type: "object", properties: {}, additionalProperties: false } } },
     });
   });
+  it("속성 이름이 키워드와 같아도(format·pattern) 지우지 않는다", () => {
+    expect(toStrictSchema({ type: "object", properties: { format: { type: "string", enum: ["a"], format: "uri" }, pattern: { type: "string" } } })).toEqual({
+      type: "object",
+      additionalProperties: false,
+      properties: { format: { type: "string", enum: ["a"] }, pattern: { type: "string" } },
+    });
+  });
   it("비용 계산", () => {
     expect(anthropicCostUsd("claude-opus-5-5", 1_000_000, 1_000_000)).toBe(24);
     expect(anthropicCostUsd("unknown", 1, 1)).toBeNull();

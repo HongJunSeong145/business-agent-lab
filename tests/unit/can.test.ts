@@ -37,6 +37,9 @@ const matrix: [Action, boolean, boolean, boolean, boolean][] = [
   [{ type: "task.adjustProgress", task: otherTask }, true, true, true, false],
   [{ type: "task.complete", task: otherTask }, true, true, true, false],
   [{ type: "plan.approve" }, true, true, true, false],
+  [{ type: "plan.edit" }, true, true, true, false],
+  [{ type: "reference.view" }, true, true, true, true],
+  [{ type: "reference.add", task: otherTask }, true, true, true, false],
   [{ type: "finance.edit" }, true, true, true, false],
   [{ type: "evidence.upload" }, true, true, true, true],
   [{ type: "profile.view" }, true, true, true, true],
@@ -55,7 +58,7 @@ describe("권한 매트릭스", () => {
     const all: ActionType[] = [
       "meeting.upload", "meeting.reanalyze", "meeting.view", "proposal.approve", "project.create", "project.confirmSchedule",
       "project.cancel", "task.create", "task.assign", "task.confirmDeadline", "task.requestDeadlineChange", "deliverable.upload",
-      "deliverable.view", "task.adjustProgress", "task.complete", "plan.approve", "finance.edit", "evidence.upload", "profile.view",
+      "deliverable.view", "task.adjustProgress", "task.complete", "plan.approve", "plan.edit", "reference.view", "reference.add", "finance.edit", "evidence.upload", "profile.view",
       "profile.edit", "profile.create", "contacts.editRows", "contacts.editColumns", "settings.manage", "members.manage", "backup.manage",
     ];
     expect([...covered].sort()).toEqual([...all].sort());

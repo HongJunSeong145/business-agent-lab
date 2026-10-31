@@ -52,6 +52,9 @@ export type Action =
   | { type: "task.adjustProgress"; task: TaskResource }
   | { type: "task.complete"; task: TaskResource }
   | { type: "plan.approve" }
+  | { type: "plan.edit" }
+  | { type: "reference.view" }
+  | { type: "reference.add"; task: TaskResource }
   | { type: "finance.edit" }
   | { type: "evidence.upload" }
   | { type: "profile.view" }
@@ -103,7 +106,14 @@ export function can(actor: Actor, action: Action, settings: Settings = DEFAULT_S
       return isAssignee(actor, action.task);
 
     case "deliverable.upload":
+    case "reference.add": // 링크·파일 추가와 AI 제작 의뢰
       return isAssignee(actor, action.task) || inTaskDepartment(actor, action.task);
+
+    case "reference.view":
+      return true;
+
+    case "plan.edit": // 기획안 작성은 기획국(6-3), 결재는 회장·국장
+      return actor.departmentCode === "planning";
 
     case "finance.edit":
       return actor.departmentCode === "finance";

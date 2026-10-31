@@ -155,7 +155,17 @@ export function TaskRow({ task, today, deptCode }: { task: TaskRowData; today: s
       </Popover.Root>
       <span className="col-start-2 flex items-center gap-1 justify-self-end md:col-start-auto">
         <UploadDrop task={task} drawerHref={`${drawerHref}&tab=deliverables`} onUploaded={() => router.refresh()} />
-        <span className="inline-flex h-7 w-7 cursor-not-allowed items-center justify-center rounded text-muted opacity-50" title="레퍼런스 — Phase 7 예정" aria-label="레퍼런스(Phase 7 예정)"><BookOpen className="h-4 w-4" /></span>
+        <Link
+          href={`${drawerHref}&tab=references`}
+          scroll={false}
+          className="inline-flex h-7 min-w-7 items-center justify-center gap-0.5 rounded px-1 hover:bg-surface"
+          aria-label={`${task.title} 레퍼런스${task.referenceCount ? ` ${task.referenceCount}개` : ""}`}
+          title="레퍼런스"
+          data-testid="row-references"
+        >
+          <BookOpen className="h-4 w-4" />
+          {task.referenceCount ? <span className="tabular text-xs">{task.referenceCount}</span> : null}
+        </Link>
         <Link href={drawerHref} scroll={false} className="inline-flex h-7 w-7 items-center justify-center rounded hover:bg-surface" aria-label={`${task.title} 상세`}><ChevronRight className="h-4 w-4" /></Link>
       </span>
     </li>

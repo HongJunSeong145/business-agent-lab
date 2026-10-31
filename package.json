@@ -25,7 +25,8 @@
     "worker": "tsx worker/index.ts",
     "fixtures:minutes": "tsx scripts/fixtures/generate-minutes.ts",
     "ai:eval": "tsx scripts/ai-eval.ts",
-    "ai:eval:a6": "tsx --conditions=react-server scripts/ai-eval-a6.ts"
+    "ai:eval:a6": "tsx --conditions=react-server scripts/ai-eval-a6.ts",
+    "ai:eval:a5": "tsx --conditions=react-server scripts/ai-eval-a5.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",

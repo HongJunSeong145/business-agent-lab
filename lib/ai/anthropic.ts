@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { AiTransientError, AiUnavailableError, wrapDocuments, extractJson } from "@/lib/ai/provider";
-import type { AiProvider, CompleteRequest, CompleteResult } from "@/lib/ai/provider";
+import { AiSearchUnavailableError, AiTransientError, AiUnavailableError, wrapDocuments, extractJson } from "@/lib/ai/provider";
+import type { AiProvider, CompleteRequest, CompleteResult, SearchRequest, SearchResult, SearchSource } from "@/lib/ai/provider";
 
 /**
  * Anthropic(Claude API) 공급자 (ADR-028).
@@ -18,6 +18,9 @@ const PRICES: Record<string, [number, number]> = {
   "claude-haiku-5-5": [0.1, 0.5],
 };
 
+/** 웹 검색 단가: 1,000회당 $10 */
+export const WEB_SEARCH_USD = 0.01;
+
 export function anthropicCostUsd(model: string, inTok: number, outTok: number): number | null {
   const key = Object.keys(PRICES).find((k) => model.startsWith(k));
   if (!key) return null;
@@ -28,12 +31,19 @@ export function anthropicCostUsd(model: string, inTok: number, outTok: number): 
 const FALLBACK_MODELS = new Set(["claude-opus-5-5", "claude-sonnet-5-5", "claude-opus-5", "claude-fable-5-1"]);
 
 /** JSON Schema 를 구조화 출력이 받는 형태로 정리: 모든 object 에 additionalProperties:false, 미지원 키워드 제거 */
+const DROP_KEYWORDS = new Set(["$schema", "minLength", "maxLength", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "minItems", "maxItems", "pattern", "format"]);
+
 export function toStrictSchema(s: unknown): unknown {
   if (Array.isArray(s)) return s.map(toStrictSchema);
   if (!s || typeof s !== "object") return s;
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(s as Record<string, unknown>)) {
-    if (["$schema", "minLength", "maxLength", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "minItems", "maxItems", "pattern", "format"].includes(k)) continue;
+    if (DROP_KEYWORDS.has(k)) continue;
+    if ((k === "properties" || k === "$defs" || k === "definitions") && v && typeof v === "object" && !Array.isArray(v)) {
+      // 속성 이름(예: "format")은 키워드가 아니므로 그대로 두고 값만 정리
+      out[k] = Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([name, sub]) => [name, toStrictSchema(sub)]));
+      continue;
+    }
     out[k] = toStrictSchema(v);
   }
   if (out.type === "object" || out.properties) {
@@ -99,6 +109,53 @@ export class AnthropicProvider implements AiProvider {
       json = extractJson(out);
     }
     return { json, ...base };
+  }
+
+  /**
+   * 서버 측 웹 검색(web_search). 결과 출처(URL·제목)는 web_search_tool_result 블록에서만 모은다.
+   * 긴 검색은 stop_reason=pause_turn 으로 끊길 수 있어 그대로 이어 보낸다(최대 3회).
+   */
+  async search(req: SearchRequest): Promise<SearchResult> {
+    const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: req.prompt }];
+    const sources = new Map<string, SearchSource>();
+    let text = "";
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let searches = 0;
+    let model = this.model;
+    let errors = 0;
+    for (let turn = 0; turn < 4; turn++) {
+      let res: Anthropic.Beta.BetaMessage;
+      try {
+        res = await this.client.beta.messages.create({
+          model: this.model,
+          max_tokens: 16000,
+          system: req.system,
+          messages,
+          tools: [{ type: "web_search_20260209", name: "web_search", max_uses: req.maxUses ?? 5, allowed_callers: ["direct"] }],
+        });
+      } catch (e) {
+        throw mapError(e);
+      }
+      model = res.model;
+      inputTokens += res.usage.input_tokens + (res.usage.cache_read_input_tokens ?? 0) + (res.usage.cache_creation_input_tokens ?? 0);
+      outputTokens += res.usage.output_tokens;
+      searches += res.usage.server_tool_use?.web_search_requests ?? 0;
+      for (const b of res.content) {
+        if (b.type === "web_search_tool_result") {
+          if (Array.isArray(b.content)) for (const r of b.content) sources.set(r.url, { url: r.url, title: r.title, page_age: r.page_age });
+          else errors++;
+        } else if (b.type === "text") {
+          text += b.text;
+        }
+      }
+      if (res.stop_reason === "refusal") break;
+      if (res.stop_reason !== "pause_turn") break;
+      messages.push({ role: "assistant", content: res.content as Anthropic.Beta.BetaContentBlockParam[] });
+    }
+    if (sources.size === 0) throw new AiSearchUnavailableError(errors ? "웹 검색 오류" : "검색 결과 없음");
+    const cost = anthropicCostUsd(model, inputTokens, outputTokens);
+    return { text, sources: [...sources.values()], searches, model, inputTokens, outputTokens, costUsd: cost === null ? null : cost + searches * WEB_SEARCH_USD };
   }
 }
 

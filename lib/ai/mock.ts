@@ -1,5 +1,6 @@
 import type { A6Output } from "./schemas/a6";
-import type { CompleteRequest, MockHandler } from "./provider";
+import type { CompleteRequest, MockHandler, MockSearchHandler, SearchRequest, SearchSource } from "./provider";
+import type { A5Output } from "./schemas/a5";
 import type { A1Summary, DeptCode } from "./schemas/a1";
 import type { A2Output } from "./schemas/a2";
 import type { Paragraph } from "./grounding";
@@ -192,7 +193,50 @@ export function mockA6(ctx: A6MockContext): A6Output {
   };
 }
 
+export type A5MockContext = { task: { title: string; deptCode: string }; sources: SearchSource[]; searchFailed: boolean; plan: { versionNo: number; isDraft: boolean; fields: { title: string; datetime: string; venue: string } } | null };
+
+/** 결정적 A5 검색: 가상 출처 2개(example.org — 실제 사이트 아님) */
+export function mockA5Search(req: SearchRequest) {
+  const t = (req.mockContext as { task: { title: string } }).task.title;
+  return {
+    text: `mock 검색: '${t}' 관련 사례 2건`,
+    sources: [
+      { url: "https://example.org/council/case-1", title: `${t} 사례 A (가상)` },
+      { url: "https://example.org/council/case-2", title: `${t} 사례 B (가상)` },
+    ],
+    searches: 1,
+  };
+}
+
+/** 결정적 A5: 출처마다 레퍼런스 1건 + 국서 형식 예시안 */
+export function mockA5(ctx: A5MockContext): A5Output {
+  const f = ctx.plan?.fields;
+  const head = ctx.plan?.isDraft ? "※ 기획안 초안 기준\n\n" : "";
+  const facts = f ? `- 행사명: ${f.title}\n- 일시: ${f.datetime}\n- 장소: ${f.venue}` : "- 행사명: [ ]\n- 일시: [ ]\n- 장소: [ ]";
+  const byDept: Record<string, A5Output["examples"]> = {
+    planning: [{ title: "기획안 초안 예시", kind: "기획안 초안", format: "markdown", content: `${head}# 기획안 초안\n${facts}\n- 예산액: [ ]\n\n## 타임테이블\n| 시간 | 내용 |\n|---|---|\n| [ ] | [ ] |`, external_send: false }],
+    finance: [{ title: "예산 시나리오 표", kind: "예산 시나리오", format: "markdown", content: `${head}| 구분 | 금액 |\n|---|---|\n| 최소 | [ ] |\n| 표준 | [ ] |\n| 확대 | [ ] |`, external_send: false }],
+    secretariat: [
+      { title: "제휴 요청서 구성안", kind: "슬라이드 구성안", format: "markdown", content: `${head}1. 표지\n2. 행사 소개\n${facts}`, external_send: false },
+      { title: "제휴 문의 이메일 문안", kind: "이메일 문안", format: "markdown", content: `${head}안녕하세요, 학생회입니다.\n${facts}`, external_send: true },
+    ],
+    promotion: [
+      { title: "카드뉴스 장별 문구", kind: "카드뉴스", format: "markdown", content: `${head}1장: ${f?.title ?? "[행사명]"}\n2장: ${f?.datetime ?? "[일시]"} · ${f?.venue ?? "[장소]"}`, external_send: false },
+      { title: "포스터 목업", kind: "포스터 목업", format: "svg", content: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 850"><rect width="600" height="850" fill="#1d3557"/><text x="300" y="400" fill="#fff" font-size="48" text-anchor="middle">${(f?.title ?? "행사명").replace(/[<&>]/g, "")}</text></svg>`, external_send: false },
+    ],
+    operations: [{ title: "집행 매뉴얼 초안", kind: "집행 매뉴얼", format: "markdown", content: `${head}## 역할표\n| 역할 | 인원 |\n|---|---|\n| 배부 | [ ] |\n\n## 비상 대응\n- [ ]`, external_send: false }],
+  };
+  return {
+    references: ctx.sources.map((s, i) => ({ source_id: `S${i + 1}`, summary: `${s.title} 요약`, benchmark_points: ["구성 참고"], relevance: "같은 유형의 행사" })),
+    examples: byDept[ctx.task.deptCode] ?? [{ title: "예시안", kind: "초안", format: "markdown", content: `${head}${facts}`, external_send: false }],
+    notes: ctx.searchFailed ? "외부 레퍼런스 검색 실패 — 내부 자료만 사용" : "mock 예시안",
+  };
+}
+
+export const MOCK_SEARCH_HANDLERS: Record<string, MockSearchHandler> = { a5_search: mockA5Search };
+
 export const MOCK_HANDLERS: Record<string, MockHandler> = {
+  a5: (req: CompleteRequest) => mockA5(req.mockContext as A5MockContext),
   a6: (req: CompleteRequest) => mockA6(req.mockContext as A6MockContext),
   a1: (req: CompleteRequest) => mockA1(req.mockContext as A1MockContext),
   a2: (req: CompleteRequest) => mockA2(req.mockContext as A2MockContext),

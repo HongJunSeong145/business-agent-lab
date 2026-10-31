@@ -35,11 +35,35 @@ export type CompleteResult = {
   costUsd: number | null;
 };
 
+export type SearchRequest = { agent: string; system: string; prompt: string; maxUses?: number; mockContext?: unknown };
+export type SearchSource = { url: string; title: string; page_age?: string | null };
+export type SearchResult = {
+  /** 모델이 검색 후 정리한 메모(자유 형식) */
+  text: string;
+  /** 실제 검색 결과로 받은 출처 — 레퍼런스 링크는 이 안에 있는 것만 인정한다 */
+  sources: SearchSource[];
+  searches: number;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number | null;
+};
+
+/** 웹 검색을 쓸 수 없는 공급자·설정 — A5 는 내부 자료만으로 예시안을 만들고 "외부 레퍼런스 검색 실패"를 표시한다 */
+export class AiSearchUnavailableError extends Error {
+  constructor(message = "웹 검색을 사용할 수 없습니다") {
+    super(message);
+    this.name = "AiSearchUnavailableError";
+  }
+}
+
 export interface AiProvider {
   readonly name: "anthropic" | "openrouter" | "mock" | "none";
   readonly available: boolean;
   readonly model: string;
   complete(req: CompleteRequest): Promise<CompleteResult>;
+  /** 서버 측 웹 검색 (지원하지 않으면 없음) */
+  search?(req: SearchRequest): Promise<SearchResult>;
 }
 
 export class AiUnavailableError extends Error {
@@ -146,17 +170,26 @@ export class OpenRouterProvider implements AiProvider {
 }
 
 export type MockHandler = (req: CompleteRequest) => unknown;
+export type MockSearchHandler = (req: SearchRequest) => Omit<SearchResult, "model" | "inputTokens" | "outputTokens" | "costUsd">;
 
 /** 결정적 mock — 에이전트별 처리 함수(lib/ai/mock.ts) */
 export class MockProvider implements AiProvider {
   readonly name = "mock" as const;
   readonly available = true;
   readonly model = "mock";
-  constructor(private readonly handlers: Record<string, MockHandler> = {}) {}
+  constructor(
+    private readonly handlers: Record<string, MockHandler> = {},
+    private readonly searchHandlers: Record<string, MockSearchHandler> = {},
+  ) {}
   async complete(req: CompleteRequest): Promise<CompleteResult> {
     const h = this.handlers[req.agent];
     if (!h) throw new Error(`mock 처리 함수 없음: ${req.agent}`);
     return { json: h(req), model: "mock", inputTokens: 0, outputTokens: 0, costUsd: 0 };
+  }
+  async search(req: SearchRequest): Promise<SearchResult> {
+    const h = this.searchHandlers[req.agent];
+    if (!h) throw new AiSearchUnavailableError("mock 검색 처리 함수 없음");
+    return { ...h(req), model: "mock", inputTokens: 0, outputTokens: 0, costUsd: 0 };
   }
 }
 
@@ -190,11 +223,11 @@ export const DEFAULT_MODEL = "anthropic/claude-sonnet-4.5";
 export function createProvider(
   e: Pick<Env, "APP_ENV" | "AI_PROVIDER" | "OPENROUTER_API_KEY" | "ANTHROPIC_API_KEY" | "LLM_MODEL">,
   mockHandlers?: Record<string, MockHandler>,
-  opts?: { referer?: string; fetchImpl?: FetchLike },
+  opts?: { referer?: string; fetchImpl?: FetchLike; mockSearch?: Record<string, MockSearchHandler> },
 ): AiProvider {
   assertAiConfig(e);
   const mode = resolveAiMode(e);
-  if (mode === "mock") return new MockProvider(mockHandlers);
+  if (mode === "mock") return new MockProvider(mockHandlers, opts?.mockSearch);
   if (mode === "anthropic") return new AnthropicProvider(e.ANTHROPIC_API_KEY!, e.LLM_MODEL || ANTHROPIC_DEFAULT_MODEL);
   if (mode === "openrouter") return new OpenRouterProvider(e.OPENROUTER_API_KEY!, e.LLM_MODEL || DEFAULT_MODEL, opts);
   return new NoneProvider();
