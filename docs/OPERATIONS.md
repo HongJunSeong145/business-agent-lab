@@ -5,7 +5,7 @@
 |---|---|
 | 웹 + 작업 처리기 | Render 웹 서비스 1개(`kgb-agent`). 백그라운드 작업(추출·AI·매일 점검)도 같은 서버 안에서 실행(`WORKER_MODE=inline`) |
 | 데이터베이스 | Render PostgreSQL 16(`kgb-db`). 업로드 파일도 DB에 저장(`STORAGE_DRIVER=db`) |
-| AI | Anthropic Claude API(`ANTHROPIC_API_KEY`), 기본 모델 `claude-opus-5-5`, **하루 3,000원 상한(코드 고정)** |
+| AI | Anthropic Claude API(`ANTHROPIC_API_KEY`), 기본 모델 `claude-opus-5-5`, **하루 10,000원 상한(코드 고정)** |
 | 자동 작업 | 매일 09:00(한국 시간) 사업 진행 점검(A7) → 알림·사무국 노티스, 월요일 주간 요약 |
 | 상태 확인 주소 | `/api/health` (Render 헬스체크) |
 
@@ -61,7 +61,7 @@
 - [ ] **학생회 정보**: 설정에서 기수·학사일정(분기), 규칙 파라미터·공휴일, 배너
 - [ ] **인적사항·연락망**: 실제 데이터 입력(개인정보 수집·이용 동의 확인)
 - [ ] **백업**: 첫 백업을 받고 복원 리허설 1회
-- [ ] **AI 예산**: 하루 3,000원 상한 유지 여부 결정(바꾸려면 코드의 `AI_DAILY_BUDGET_CAP_KRW` 수정)
+- [ ] **AI 예산**: 하루 10,000원 상한 유지 여부 결정(바꾸려면 코드의 `AI_DAILY_BUDGET_CAP_KRW` 수정)
 - [ ] **무료 플랜 해제 검토**: 잠들지 않아야 매일 09:00 점검이 정확히 돕니다
 
 ## 8. 보안 점검 결과 (Phase 10)

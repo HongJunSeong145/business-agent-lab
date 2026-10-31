@@ -47,7 +47,7 @@ export async function runReferenceJob(db: Db, provider: AiProvider, aiJobId: str
   await db.referenceRequest.update({ where: { id: requestId }, data: { status: "running" } });
   const snapshot = (req.context_snapshot ?? {}) as { options?: { useMinutes?: boolean; usePlan?: boolean; usePastWork?: boolean } } & Record<string, unknown>;
   const opts = snapshot.options ?? {};
-  const budgetKrw = await getNumberSetting(db, termId, "AI_DAILY_BUDGET_KRW", 3000);
+  const budgetKrw = await getNumberSetting(db, termId, "AI_DAILY_BUDGET_KRW", 10000);
   const usdKrw = Number(process.env.USD_KRW ?? 1400);
 
   try {

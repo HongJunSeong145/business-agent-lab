@@ -73,7 +73,7 @@ export async function runEvaluateJob(db: Db, storage: Storage, provider: AiProvi
       promptVersion: A6_PROMPT_VERSION,
       schema: a6Schema,
       jobId: aiJobId,
-      budgetKrw: await getNumberSetting(db, termId, "AI_DAILY_BUDGET_KRW", 3000),
+      budgetKrw: await getNumberSetting(db, termId, "AI_DAILY_BUDGET_KRW", 10000),
       usdKrw: Number(process.env.USD_KRW ?? 1400),
       maxTokens: 8000,
       system: A6_SYSTEM,

@@ -35,10 +35,10 @@ export async function spentTodayKrw(db: Db): Promise<number> {
   return Number(r._sum.cost_estimate_krw ?? 0);
 }
 
-/** 하루 AI 비용 상한(사용자 결정 2026-10-31: 3,000원 이하). 설정값이 더 커도 이 값을 넘지 않는다 */
-export const AI_DAILY_BUDGET_CAP_KRW = 3000;
+/** 하루 AI 비용 상한(사용자 결정: 2026-10-31 3,000원 → 2026-11-01 10,000원). 설정값이 더 커도 이 값을 넘지 않는다 */
+export const AI_DAILY_BUDGET_CAP_KRW = 10000;
 
-/** budgetKrw 0 = 점검 스크립트 전용(상한 없음). 앱 작업은 항상 설정값(기본 3,000원)을 넘긴다 */
+/** budgetKrw 0 = 점검 스크립트 전용(상한 없음). 앱 작업은 항상 설정값(기본 10,000원)을 넘긴다 */
 export async function assertBudget(db: Db, budgetKrw: number): Promise<void> {
   if (budgetKrw <= 0) return;
   const limit = Math.min(budgetKrw, AI_DAILY_BUDGET_CAP_KRW);
