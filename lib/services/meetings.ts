@@ -193,3 +193,19 @@ export async function editAnalysis(db: Db, actor: Actor & { termId: string }, me
     return { version: a.version };
   });
 }
+
+/**
+ * 회의록 삭제(소프트 삭제 4-1) — 회장·국장. 아직 처리하지 않은 AI 제안은 함께 대체(superseded)되어 검토 대기에서 빠진다.
+ * 이미 승인해 만든 사업·업무는 그대로 둔다(필요하면 업무 화면에서 따로 취소·삭제).
+ */
+export async function deleteMeeting(db: Db, actor: Actor & { termId: string }, meetingId: string) {
+  assertCan(actor, { type: "meeting.reanalyze" }, await getPermissionSettings(db, actor.termId));
+  const m = await db.meeting.findFirst({ where: { id: meetingId, term_id: actor.termId, deleted_at: null } });
+  if (!m) throw new ServiceError("회의록을 찾을 수 없습니다.", 404);
+  return db.$transaction(async (tx) => {
+    await tx.meeting.update({ where: { id: m.id }, data: { deleted_at: new Date() } });
+    const r = await tx.proposal.updateMany({ where: { source_type: "meeting", source_id: m.id, status: "pending" }, data: { status: "superseded" } });
+    await writeAudit(tx, { actorId: actor.userId, action: "meeting.delete", entityType: "meeting", entityId: m.id, diff: { title: m.title, pendingProposalsRemoved: r.count } });
+    return { removedProposals: r.count };
+  });
+}

@@ -114,3 +114,19 @@ test("국원: 업로드 버튼 없음 + API 403, 회의록 열람은 가능 (Q4)
   await expect(page.getByRole("heading", { level: 1, name: "회의록" })).toBeVisible();
   await expect(page.getByRole("button", { name: "회의록 올리기" })).toHaveCount(0);
 });
+
+test("회의록 삭제: 확인 후 목록에서 사라지고 대기 제안도 정리", async ({ page }) => {
+  await loginOk(page, E2E.adminEmail, E2E.adminPassword);
+  await page.goto("/minutes");
+  await page.getByRole("button", { name: "회의록 업로드" }).click();
+  const d = page.getByRole("dialog", { name: "회의록 올리기" });
+  await d.getByRole("tab", { name: "텍스트 붙여넣기" }).click();
+  await d.getByLabel("회의록 내용").fill("삭제할 회의\n1. 안건\n-> 기획국이 기획안 작성");
+  await d.getByLabel(/제목/).fill("E2E 삭제할 회의록");
+  await d.getByRole("button", { name: "올리기" }).click();
+  await expect(page.getByTestId("meeting-status")).toHaveText(/^(검토 대기|완료)$/, { timeout: 30_000 });
+  await page.getByRole("button", { name: "회의록 삭제" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "삭제" }).or(page.getByRole("dialog").getByRole("button", { name: "삭제" })).first().click();
+  await expect(page.getByText(/회의록을 삭제했습니다/)).toBeVisible();
+  await expect(page.getByRole("link", { name: /E2E 삭제할 회의록/ })).toHaveCount(0);
+});

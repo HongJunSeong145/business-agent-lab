@@ -4,12 +4,12 @@ import { prisma } from "@/lib/db";
 import { resetAllTables } from "@/lib/setup/reset";
 import { ensureBaseSetup } from "@/lib/setup/bootstrap";
 import { seedDemo } from "@/lib/setup/demo";
-import { createMeeting } from "@/lib/services/meetings";
+import { createMeeting, deleteMeeting, listMeetings } from "@/lib/services/meetings";
 import { runExtractJob } from "@/lib/jobs/extract";
 import { runAnalyzeJob, runProposeJob } from "@/lib/ai/agents";
 import { enqueueAnalysisAfterExtract, requestAnalysis } from "@/lib/services/analysis";
 import { decideProposals, requestDeadlineChange } from "@/lib/services/proposals";
-import { createTask } from "@/lib/services/tasks";
+import { createTask, deleteTask } from "@/lib/services/tasks";
 import { MockProvider, NoneProvider, OpenRouterProvider, type AiProvider } from "@/lib/ai/provider";
 import { MOCK_HANDLERS } from "@/lib/ai/mock";
 import { a1Schema } from "@/lib/ai/schemas/a1";
@@ -139,6 +139,49 @@ describe("T3 중복 방지·재분석", () => {
     const up = p2.find((x) => x.kind === "update_project")!;
     expect(up.before_snapshot).toEqual({ event_start: "2026-12-10" });
     expect((up.payload as { changes: object }).changes).toEqual({ event_start: "2026-12-11" });
+  });
+});
+
+describe("삭제 후 재검사", () => {
+  it("승인해서 만든 업무를 삭제하고 재분석하면 그 업무만 다시 제안된다(남아 있는 승인 업무는 그대로 제외)", async () => {
+    const { meetingId } = await analyze(MINUTES);
+    const props = await prisma.proposal.findMany({ where: { source_id: meetingId, status: "pending" } });
+    const np = props.find((x) => x.kind === "new_project")!;
+    const [t1, t2] = props.filter((x) => x.kind === "new_task" && x.project_key === np.project_key);
+    await decideProposals(prisma, pres, { approve: [{ id: np.id }, { id: t1!.id }, { id: t2!.id }] });
+    const made = await prisma.task.findFirstOrThrow({ where: { source_proposal_id: t1!.id } });
+    await deleteTask(prisma, pres, made.id);
+
+    const { aiJobId } = await requestAnalysis(prisma, pres, meetingId, true);
+    const a = await runAnalyzeJob(prisma, mock, aiJobId);
+    await runProposeJob(prisma, mock, a.nextJobId!);
+    const pending = await prisma.proposal.findMany({ where: { source_id: meetingId, status: "pending" } });
+    const title = (p: { payload: unknown }) => (p.payload as { title: string }).title;
+    const tasksNow = pending.filter((x) => x.kind === "new_task");
+    expect(tasksNow.some((x) => title(x) === title(t1!))).toBe(true); // 지운 업무는 다시 제안
+    expect(tasksNow.some((x) => title(x) === title(t2!))).toBe(false); // 남아 있는 업무는 중복 제안 안 함
+    expect(pending.some((x) => x.kind === "new_project")).toBe(false); // 사업은 남아 있음
+
+    // 다시 승인하면 기존 사업 아래에 새로 만들어진다
+    const again = tasksNow.find((x) => title(x) === title(t1!))!;
+    await decideProposals(prisma, pres, { approve: [{ id: again.id }] });
+    const recreated = await prisma.task.findFirstOrThrow({ where: { source_proposal_id: again.id, deleted_at: null } });
+    expect(recreated.project_id).toBe(made.project_id);
+  });
+
+  it("회의록 삭제: 대기 제안은 빠지고 승인해 만든 사업·업무는 남는다, 국원은 불가", async () => {
+    const { meetingId } = await analyze(MINUTES);
+    const np = await prisma.proposal.findFirstOrThrow({ where: { source_id: meetingId, status: "pending", kind: "new_project" } });
+    await decideProposals(prisma, pres, { approve: [{ id: np.id }] });
+    const member = await prisma.user.findUniqueOrThrow({ where: { email: "promotion.member@demo.kgb.invalid" }, include: { memberships: true } });
+    const mActor = { userId: member.id, role: "member" as const, departmentId: member.memberships[0]!.department_id, departmentCode: "promotion", termId: pres.termId };
+    await expect(deleteMeeting(prisma, mActor, meetingId)).rejects.toBeInstanceOf(ForbiddenError);
+    const r = await deleteMeeting(prisma, pres, meetingId);
+    expect(r.removedProposals).toBeGreaterThan(0);
+    expect(await prisma.proposal.count({ where: { source_id: meetingId, status: "pending" } })).toBe(0);
+    expect((await listMeetings(prisma, pres.termId, {})).some((m) => m.id === meetingId)).toBe(false);
+    expect(await prisma.project.count({ where: { created_from_meeting_id: meetingId, deleted_at: null } })).toBe(1);
+    await expect(deleteMeeting(prisma, pres, meetingId)).rejects.toThrow(/찾을 수 없습니다/);
   });
 });
 

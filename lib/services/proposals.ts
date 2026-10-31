@@ -81,9 +81,11 @@ export async function decideProposals(db: Db, actor: ActorT, raw: unknown) {
 
     // 승인된 이전 제안으로 이미 만들어진 사업(같은 project_key) 찾기
     const priorProjects = await tx.proposal.findMany({ where: { term_id: actor.termId, kind: "new_project", status: { in: ["approved", "edited_approved"] }, project_key: { in: props.map((p) => p.project_key).filter(Boolean) as string[] } } });
+    const priorIds = priorProjects.map((pp) => (pp.payload as { created_project_id?: string }).created_project_id).filter(Boolean) as string[];
+    const alive = new Set((await tx.project.findMany({ where: { id: { in: priorIds }, deleted_at: null }, select: { id: true } })).map((x) => x.id));
     for (const pp of priorProjects) {
       const pid = (pp.payload as { created_project_id?: string }).created_project_id;
-      if (pid && pp.project_key) projectIdOfKey.set(pp.project_key, pid);
+      if (pid && alive.has(pid) && pp.project_key) projectIdOfKey.set(pp.project_key, pid);
     }
 
     // 1) 사업
