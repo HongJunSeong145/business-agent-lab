@@ -32,6 +32,13 @@ export default async function SettingsPage() {
           </p>
         </Card>
       ) : null}
+      {can(user, { type: "backup.manage" }) ? (
+        <Card className="space-y-2">
+          <CardTitle>백업</CardTitle>
+          <a href="/api/backup" className="block text-sm underline" data-testid="backup-download">전체 백업 내려받기(JSON — 업로드 파일 포함)</a>
+          <p className="text-xs text-muted">복원 방법은 docs/OPERATIONS.md 를 보세요. 백업 파일에는 개인정보가 들어 있으니 안전한 곳에 보관하세요.</p>
+        </Card>
+      ) : null}
     </div>
   );
 }

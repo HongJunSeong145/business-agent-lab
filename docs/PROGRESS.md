@@ -11,8 +11,8 @@
 | 6. 작업물·AI 진척도 | ✅ 완료 | 사용자 승인 2026-10-31 |
 | 7. 레퍼런스·예시안·기획안 | ✅ 완료 | 사용자 승인 2026-10-31 |
 | 8. 대시보드·인적사항·연락망 | ✅ 완료 | 사용자 승인 2026-10-31 |
-| 9. 재정·모니터링 | 🟡 구현·검증 완료 — 사용자 확인 대기 | 아래 상세 |
-| 10. 스테이징·보안·E2E | ⏸ | 배포 계정 필요(N9) |
+| 9. 재정·모니터링 | ✅ 완료 | 사용자 승인 2026-10-31 |
+| 10. 스테이징·보안·E2E | 🟡 준비·검증 완료 — **사용자의 Render 배포 대기** | 아래 상세, `docs/DEPLOY.md` |
 
 ---
 
@@ -412,3 +412,49 @@
 - 엑셀(.xlsx) 내보내기는 없음(CSV만, 엑셀에서 바로 열림).
 - 열 삭제 값의 "30일 뒤 정리"는 아직 없음(삭제한 열 값은 계속 보존).
 - 예산 라인은 분기를 직접 고른다(사업 분기와 자동 연결은 하지 않음).
+
+---
+
+## Phase 10 — 스테이징 배포 준비·보안 점검·전체 E2E
+
+**일자**: 2026-10-31 · **브랜치**: `claude/great-cray-kgz7nw`
+
+### 한 일
+- **배포 설정(render.yaml)**: 웹 + PostgreSQL 한 번에 생성, `AI_PROVIDER=anthropic`(키를 넣는 순간 AI 켜짐, 비우면 자동으로 수동 모드), 체험용 데모 데이터를 **처음 한 번만** 넣기(`SEED_DEMO`, 이후 재시작해도 사용자 수정 내용 보존), Render가 입력을 묻는 값은 관리자 이메일·비밀번호·AI 키(선택)·데모 비밀번호(선택) 4개뿐
+- **데모 내용**: 가상 회원 11명·연락처 + 사업 2개(학생회비 간식 나눔 / 교비·외부업체 축제, 표준 업무 30개) + 회의록 2건(추출 완료, 'AI 분석' 바로 가능)
+- **보안**: CSP(frame-ancestors none·object-src none·base-uri·form-action), HSTS 추가. **PDF 미리보기가 X-Frame-Options DENY 에 막히던 문제 수정**(파일 응답만 SAMEORIGIN, PDF는 브라우저 내장 뷰어를 위해 sandbox 제외)
+- **백업·복원**: 관리자 화면 "전체 백업 내려받기"(JSON, 업로드 파일 포함), `pnpm backup:export` / `pnpm backup:restore`(외래키 순서·한 트랜잭션·운영은 추가 확인), **리허설 성공**(42개 표 행 수·내용·파일 바이트 일치)
+- **운영 도구**: `pnpm staging:reset`(운영 거부), `pnpm demo:remove`(운영 전환용)
+- **문서**: `docs/DEPLOY.md`(처음 하는 분용 단계별 Render 가이드·AI 키 넣기·문제 해결), `docs/STAGING_GUIDE.md`(접속·테스트 계정·T1~T26 시나리오 체크리스트·초기화), `docs/OPERATIONS.md`(구성·백업/복원·키 교체·장애 대응·운영 전환 체크리스트·보안 점검 결과)
+
+### 실행한 점검
+| 점검 | 결과 |
+|---|---|
+| 새 DB에서 Render 시작 절차(마이그레이션 → 관리자·데모) 그대로 실행 | ✅ 관리자 생성, 데모 사업 2·업무 30·회의록 2, 두 번째 시작 때 재시드 안 함 |
+| 빌드한 앱을 `APP_ENV=staging` 으로 실행 후 실제 브라우저 로그인 | ✅ 노란 띠, "AI 일시 사용 불가"(키 없음), 데모 사업·회의록 표시, 작업 처리기 시작 |
+| 깨끗한 복사본에서 Render 빌드 명령 그대로 | ✅ 성공 |
+| 키 유출 검사 | ✅ 실제 키 앞부분이 저장소·빌드 결과·git 기록 어디에도 없음 |
+| 규칙 엔진 | ✅ 76/76, 분기 커버리지 100% |
+| 단위·통합 | ✅ 317/317 |
+| E2E | ✅ 59/59 (보안 헤더·로그인 없는 API 401·백업 권한·50MB 초과 413 추가) |
+
+### 테스트 시나리오 T1~T26 대응
+| 번호 | 내용 | 자동 테스트 위치 |
+|---|---|---|
+| T1 | 회의록 업로드·추출 | e2e minutes, integration meetings |
+| T2·T3·T24·T25 | AI 분석·중복 방지·인젝션·AI 장애 | e2e ai·no-ai, integration ai-pipeline, 실제 모델 리포트 |
+| T4·T11·T17 | 사업·업무·협업·취소 | e2e projects, integration tasks |
+| T5·T6·T7·T8·T9·T10·T16 | 규칙 엔진·일정·세금·분기 | rules 테스트, integration schedule·finance, e2e schedule·finance |
+| T12·T13·T14·T15 | 작업물·AI 진척도·수동·완료 | e2e deliverables·projects, integration deliverables, 실제 모델 리포트 |
+| T18 | 사업 진척도 막대 | rules project-progress, e2e projects |
+| T19 | 레퍼런스 의뢰 | e2e plans-references, integration plans-references, 실제 모델 리포트 |
+| T20 | 증빙 누락 | rules monitor, integration·e2e finance |
+| T21·T22·T26 | 인적사항·연락망·대시보드 | e2e dashboard·auth, integration directory |
+| T23 | 권한 매트릭스 | unit can, 각 통합 테스트의 403 검사, e2e security |
+
+### 완료 기준
+| 기준 | 상태 |
+|---|---|
+| E2E 전부 통과 | ✅ 59/59 |
+| 운영 데이터와 분리 | ✅ 스테이징 전용 DB·`APP_ENV=staging`(노란 띠, 운영 초기화 거부), 키는 환경변수에만 |
+| 외부 브라우저에서 임시 URL 접속·로그인·핵심 흐름 | ⏳ **사용자가 Render 에 배포한 뒤 확인**(이 개발 환경에는 Render 계정이 없음). 같은 절차를 로컬에서 그대로 재현해 통과 |

@@ -1,104 +1,154 @@
-# KGB_Agent 배포·실행 가이드
+# KGB_Agent 배포 가이드 (처음 하는 분용)
 
-이 저장소는 **GitHub에 올린 코드 그대로** 웹사이트로 배포할 수 있게 구성되어 있습니다(ADR-019).
-현재 단계에서는 사용자 1인이 확인·사용하는 개인용 사이트(스테이징)를 기준으로 합니다.
+이 문서는 **Render(렌더)** 라는 서비스에 KGB_Agent를 올려, 인터넷 주소(예: `https://kgb-agent-xxxx.onrender.com`)로 접속할 수 있게 만드는 방법입니다.
+처음 해 보는 분 기준으로 한 단계씩 적었습니다. 막히는 곳이 있으면 **그 화면에 보이는 글자를 그대로** Claude에게 알려 주세요.
+
+> 걸리는 시간: 가입 5분 + 설정 5분 + 자동 설치 기다리기 5~15분
+> 비용: 이 설정은 **무료 플랜** 기준입니다(아래 "무료 플랜에서 알아 둘 점" 참고).
 
 ---
 
-## 1. Render로 배포하기 (권장, 클릭 몇 번)
+## 0. 미리 준비할 것
 
-저장소 루트의 `render.yaml`(Blueprint)이 **웹 서비스 + PostgreSQL**을 한 번에 만듭니다.
+| 준비물 | 설명 |
+|---|---|
+| GitHub 계정 | 이 코드가 올라가 있는 `HongJunSeong145/business-agent-lab` 저장소의 주인 계정 |
+| 관리자 이메일 | 사이트에 처음 로그인할 때 쓸 이메일. 실제로 받는 메일이 아니어도 됩니다(예: `me@kgb.local`) |
+| 관리자 비밀번호 | **10자 이상**. 메모해 두세요. 저장소·채팅에는 쓰지 마세요 |
+| (선택) 데모 계정 비밀번호 | 국원 화면을 체험할 가상 계정들의 공통 비밀번호, 10자 이상 |
+| (선택) Anthropic API 키 | AI 기능을 켤 때만 필요. 나중에 넣어도 됩니다 → [5장](#5-ai-키-넣기-ai-켜기) |
 
-1. [Render](https://render.com)에 GitHub 계정으로 가입·로그인합니다.
-2. 대시보드에서 **New → Blueprint**를 누르고 이 저장소(`business-agent-lab`)를 선택합니다.
-   - 배포할 브랜치를 고릅니다(작업 브랜치 또는 `main`에 병합한 뒤 `main`).
-3. Render가 `render.yaml`을 읽고 `kgb-agent`(웹)와 `kgb-db`(DB)를 보여줍니다. 아래 두 값을 입력합니다.
-   - `INITIAL_ADMIN_EMAIL`: 처음 로그인할 관리자 이메일
-   - `INITIAL_ADMIN_PASSWORD`: 10자 이상 비밀번호 (저장소에는 절대 커밋하지 않습니다)
-4. **Apply**를 누르면 빌드 → DB 마이그레이션 → 관리자 계정 생성 → 서버 시작이 자동으로 진행됩니다.
-5. 완료되면 `https://kgb-agent-xxxx.onrender.com` 같은 주소가 생깁니다. 접속해 위 관리자 계정으로 로그인합니다.
+**어느 브랜치를 올리나요?** 지금 모든 코드는 `claude/great-cray-kgz7nw` 브랜치에 있습니다. 아래 3단계에서 이 브랜치를 고르면 됩니다.
+(나중에 GitHub에서 `main` 으로 합친 뒤 `main` 을 고르도록 바꿔도 됩니다.)
 
-이후에는 **GitHub에 푸시할 때마다 자동으로 다시 배포**됩니다(`autoDeploy: true`).
+---
 
-### 자동으로 설정되는 값
-| 키 | 값 | 설명 |
+## 1. Render 가입하기
+
+1. 브라우저에서 <https://render.com> 에 들어갑니다.
+2. 오른쪽 위 **Get Started**(또는 Sign Up)를 누르고 **GitHub** 로 가입을 고릅니다.
+3. GitHub 화면에서 Render 접근을 **Authorize(허용)** 합니다.
+4. 이메일 확인 메일이 오면 링크를 눌러 인증합니다.
+
+> Render가 결제 수단(카드) 등록을 요청할 수 있습니다. 무료 플랜만 쓰면 요금은 나오지 않지만, 화면 안내와 요금표를 꼭 확인하세요.
+
+---
+
+## 2. Render가 저장소를 볼 수 있게 허용하기
+
+처음 저장소를 고를 때 목록에 `business-agent-lab` 이 안 보이면:
+
+1. 저장소 목록 아래의 **Configure account**(또는 "Configure GitHub App") 를 누릅니다.
+2. GitHub 화면에서 **Only select repositories** → `business-agent-lab` 을 고르고 **Save** 합니다.
+3. Render 화면으로 돌아오면 목록에 나타납니다.
+
+---
+
+## 3. 한 번에 만들기 (Blueprint)
+
+저장소에 들어 있는 `render.yaml` 이 **웹사이트 + 데이터베이스**를 한꺼번에 만들어 줍니다.
+
+1. Render 대시보드 위쪽의 **New +** → **Blueprint** 를 누릅니다.
+2. 저장소 목록에서 `business-agent-lab` 옆의 **Connect** 를 누릅니다.
+3. 설정 화면에서:
+   - **Blueprint Name**: 아무 이름(예: `kgb`)
+   - **Branch**: `claude/great-cray-kgz7nw` 를 고릅니다.
+4. 아래에 **값을 입력하라는 칸**이 나옵니다. 다음처럼 채웁니다.
+
+   | 이름 | 넣을 값 |
+   |---|---|
+   | `INITIAL_ADMIN_EMAIL` | 0장에서 정한 관리자 이메일 |
+   | `INITIAL_ADMIN_PASSWORD` | 관리자 비밀번호(10자 이상) |
+   | `ANTHROPIC_API_KEY` | AI 키. **지금 없으면 비워 둡니다**(AI 없이도 모든 수동 기능은 됩니다) |
+   | `SEED_DEMO_PASSWORD` | (선택) 데모 계정 비밀번호 10자 이상. 비우면 데모 계정은 로그인할 수 없습니다 |
+
+5. **Apply**(또는 Deploy Blueprint)를 누릅니다.
+
+### 기다리는 동안 무슨 일이 일어나나요?
+Render가 자동으로 ① 데이터베이스(`kgb-db`)를 만들고 ② 코드를 내려받아 설치·빌드하고 ③ 표를 만든 뒤 ④ 관리자 계정과 체험용 가상 데이터를 넣고 ⑤ 사이트를 켭니다.
+
+- 대시보드에서 `kgb-agent` 를 누르면 **Events**·**Logs** 에서 진행 상황이 보입니다.
+- 로그에 `초기 관리자 계정을 만들었습니다.` → `데모 데이터: …` 가 나오고, 맨 위 상태가 **Live**(초록색)가 되면 완료입니다.
+
+---
+
+## 4. 접속해서 확인하기
+
+1. `kgb-agent` 화면 왼쪽 위(서비스 이름 아래)의 **`https://kgb-agent-xxxx.onrender.com`** 주소를 누릅니다.
+2. 로그인 화면에서 관리자 이메일·비밀번호로 로그인합니다.
+3. 아래가 보이면 성공입니다.
+   - 화면 맨 위 노란 띠: **테스트 환경 — 실제 데이터 입력 금지**
+   - 대시보드의 사업 진척도·국서 카드, `[데모]` 사업 2개, 회의록 2건
+   - (AI 키를 아직 안 넣었다면) 위쪽에 **AI 일시 사용 불가** 표시 — 정상입니다
+
+이 주소를 즐겨찾기 해 두세요. 무엇을 눌러 보면 되는지는 `docs/STAGING_GUIDE.md` 의 체크리스트를 보세요.
+
+---
+
+## 5. AI 키 넣기 (AI 켜기)
+
+키는 **Render 화면에만** 넣습니다. 코드·GitHub·채팅에는 넣지 마세요(Render는 값을 가려서 보여 줍니다).
+
+### 5-1. 키 만들기 (Anthropic)
+1. <https://console.anthropic.com> 에 로그인 → 왼쪽 **API Keys** → **Create Key**.
+2. 이름(예: `kgb-staging`)을 넣고 만들면 `sk-ant-…` 로 시작하는 키가 **한 번만** 보입니다. 바로 복사합니다.
+3. 예전에 채팅에 붙여 넣었던 키가 있다면, 같은 화면에서 그 키를 **Disable/Delete** 해 두세요(유출 대비).
+
+### 5-2. Render에 넣기
+1. Render 대시보드 → **kgb-agent** → 왼쪽 메뉴 **Environment**.
+2. 목록에서 `ANTHROPIC_API_KEY` 를 찾아 **Edit**(연필) → 값 칸에 키를 붙여 넣습니다.
+   (목록에 없으면 **Add Environment Variable** → Key 에 `ANTHROPIC_API_KEY`, Value 에 키)
+3. **Save Changes** 를 누릅니다. 선택지가 나오면 **Save and deploy**(저장하고 다시 배포)를 고릅니다.
+4. 2~5분 뒤 다시 접속해 **AI 일시 사용 불가** 표시가 사라졌으면 AI가 켜진 것입니다.
+5. 확인: 회의록 → `[데모] 제12차 정기회의` → **AI 분석** → 잠시 뒤 정리본·검토 대기가 생기면 성공.
+
+### AI 비용
+- 하루 AI 사용액은 **3,000원을 넘지 않도록 코드에 상한**이 있습니다. 넘으면 AI 작업만 다음 날로 미뤄지고 수동 기능은 그대로 됩니다.
+- 오늘 사용액: **설정** 화면 → "오늘 AI 사용액".
+- 대략적인 1건 비용: 회의록 분석 약 150원, 작업물 평가 약 70원, 레퍼런스 제작 약 860원.
+- 비용을 더 줄이려면 Environment 에 `LLM_MODEL` = `claude-sonnet-5-5` 를 추가합니다(약 절반, 품질은 써 보고 판단).
+
+---
+
+## 6. 무료 플랜에서 알아 둘 점
+
+| 내용 | 영향 | 대처 |
 |---|---|---|
-| `DATABASE_URL` | Render DB 연결 문자열 | 자동 연결 |
-| `AUTH_SECRET`, `FILE_URL_SECRET` | 무작위 생성 | 자동 생성 |
-| `APP_ENV` | `staging` | 화면 상단에 "테스트 환경 — 실제 데이터 입력 금지" 띠 표시. 실제 운영으로 쓸 때 `production`으로 변경 |
-| `AI_PROVIDER` | `none` | AI 기능 끔(수동 기능은 정상). AI를 켜려면 아래 "AI 켜기" 참고 |
-| `STORAGE_DRIVER` | `db` | 업로드 파일을 DB에 저장(별도 스토리지 계정 불필요) |
-| `WORKER_MODE` | `inline` | 백그라운드 작업을 웹 서비스 안에서 실행(서비스 1개로 운영) |
-
-### 플랜·비용 주의
-- `render.yaml`은 웹·DB 모두 `free` 플랜으로 되어 있습니다.
-  - 무료 웹 서비스는 한동안 접속이 없으면 잠들고, 다음 접속 때 깨어나느라 수십 초 걸립니다.
-  - **무료 DB는 보존 기간 제한이 있어 데이터가 삭제될 수 있습니다.** 계속 쓸 데이터라면 Render 대시보드에서 DB 플랜을 유료로 바꾸세요.
-- 정확한 요금·제한은 Render 요금표에서 확인하세요.
-
-### AI 켜기 (Anthropic 권장 / OpenRouter 선택)
-1. Render 대시보드 → `kgb-agent` → **Environment**에서
-   - `ANTHROPIC_API_KEY`: Anthropic 키 입력 (값은 화면에서 가려져 표시됩니다. **저장소·코드에는 절대 넣지 마세요.**)
-   - `AI_PROVIDER`: `anthropic` 으로 변경
-   - (선택) `LLM_MODEL`: 비우면 `claude-opus-5-5`. 비용을 줄이려면 `claude-sonnet-5-5`
-   - OpenRouter를 쓰려면 대신 `OPENROUTER_API_KEY` + `AI_PROVIDER=openrouter`
-   - 일일 예산은 설정 화면에서 조정(회의록 1건 분석 약 140~170원, Opus 5.5 기준)
-2. 저장하면 자동으로 다시 시작됩니다. 상단의 "AI 일시 사용 불가" 표시가 사라지면 켜진 것입니다.
-3. 키를 채팅·메일 등으로 주고받았다면, Anthropic 콘솔(또는 OpenRouter)에서 **새 키를 발급해 교체**하고 이전 키는 삭제하는 것을 권장합니다.
-
-### 데모 데이터를 넣고 싶을 때
-Render 대시보드 → `kgb-agent` → **Shell**에서:
-```bash
-SEED_DEMO=true SEED_DEMO_PASSWORD='데모용-비밀번호-10자이상' npm run db:seed
-```
-데모 데이터는 가상 인물·가상 연락처이며 화면에 "데모 데이터"로 표시됩니다.
+| 웹사이트가 15분쯤 아무도 안 쓰면 **잠듭니다** | 다음 접속 때 30초~1분 기다림 | 정상입니다. 잠시 기다리면 열립니다 |
+| 잠든 동안에는 **매일 09:00 자동 점검**이 돌지 않을 수 있음 | 마감·증빙 알림이 늦게 옴 | **재정** 화면의 **지금 점검** 버튼을 누르세요 |
+| 무료 데이터베이스는 **보존 기간이 정해져 있어(약 30일, 요금표 확인)** 기간이 지나면 지워질 수 있음 | 입력한 데이터 삭제 | 계속 쓸 거면 DB 플랜을 유료로 바꾸고, **설정 → 백업**에서 백업을 받아 두세요 |
+| 메모리가 작음 | 아주 큰 파일 여러 개를 동시에 올리면 느릴 수 있음 | 파일은 50MB 이하만 받습니다 |
 
 ---
 
-## 2. 내 컴퓨터에서 실행하기
+## 7. 코드가 바뀌면?
 
-필요: Node.js 22 이상, pnpm 10, Docker(또는 직접 설치한 PostgreSQL 16)
+GitHub의 해당 브랜치에 새 코드가 올라가면 Render가 **자동으로 다시 배포**합니다(설정 `autoDeploy: true`). 따로 할 일은 없습니다.
+배포 중에는 1~2분 정도 이전 버전이 보이거나 잠깐 접속이 안 될 수 있습니다.
 
-```bash
-pnpm install
-```
-```bash
-docker compose up -d
-```
-```bash
-cp .env.example .env.local
-```
-`.env.local`에서 `AUTH_SECRET`(32자 이상), `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD`를 채운 뒤:
-```bash
-pnpm db:migrate && pnpm db:seed
-```
-```bash
-pnpm dev
-```
-브라우저에서 http://localhost:3000 으로 접속합니다.
+---
 
-## 3. 테스트
+## 8. 문제가 생겼을 때
+
+| 화면·로그에 보이는 것 | 원인 | 해결 |
+|---|---|---|
+| `INITIAL_ADMIN_PASSWORD: 비밀번호는 10자 이상이어야 합니다.` | 비밀번호가 짧음 | Environment 에서 10자 이상으로 바꾸고 Save and deploy |
+| 로그인하면 "이메일 또는 비밀번호가 올바르지 않습니다" | 오타 | Environment 의 `INITIAL_ADMIN_EMAIL` 확인. 5번 틀리면 15분 잠깁니다 |
+| `Build failed` | 설치·빌드 오류 | **Logs** 의 빨간 줄 몇 개를 복사해 Claude에게 보내 주세요 |
+| 계속 **AI 일시 사용 불가** | 키가 비었거나 잘못됨 | 5-2를 다시 확인. 키 앞뒤 공백 없이 붙여 넣었는지 확인 |
+| 사이트가 한참 안 열림 | 잠든 상태에서 깨어나는 중 | 1분 기다린 뒤 새로고침 |
+| 데모 계정으로 로그인 안 됨 | `SEED_DEMO_PASSWORD` 를 비웠음 | 첫 배포 때만 반영됩니다. 관리자로 로그인해 **설정 → 회원 관리**에서 초대하거나, Claude에게 요청하세요 |
+
+---
+
+## 부록: 내 컴퓨터에서 실행 (개발자용)
 
 ```bash
-pnpm test
+cp .env.example .env.local   # 값 채우기 (DATABASE_URL, AUTH_SECRET 등)
 ```
-```bash
-pnpm test:rules
-```
-```bash
-pnpm build && pnpm test:e2e
-```
-- `pnpm test`: 단위 + 통합 테스트(테스트 DB `kgb_test` 사용 — `docker compose`가 자동 생성)
-- `pnpm test:rules`: 규칙 엔진 분기 커버리지 100% 검사
-- `pnpm test:e2e`: 실제 브라우저(Playwright)로 로그인·초대·권한 흐름 검사. 처음 한 번 `pnpm exec playwright install chromium` 필요
 
-## 4. 백그라운드 작업(회의록 텍스트 추출)
-- 기본값 `WORKER_MODE=inline`: 웹 서버 안에서 작업 처리기가 함께 돈다(서비스 1개). 서버 로그에 `[worker] 작업 처리기 시작`이 보이면 정상입니다.
-- 사용량이 늘면 `WORKER_MODE=separate`로 바꾸고 별도 서비스에서 `npm run worker`를 실행합니다.
-- 작업 큐는 같은 PostgreSQL의 `pgboss` 스키마를 씁니다(별도 Redis 불필요).
+```bash
+pnpm install && pnpm db:migrate && pnpm db:seed && pnpm dev
+```
 
-## 5. 대안: Railway
-Railway에서 저장소를 연결하고 PostgreSQL 플러그인을 추가한 뒤, 같은 명령을 설정하면 됩니다.
-- Build: `npx --yes pnpm@10.28.0 install --frozen-lockfile && npm run build`
-- Start: `npm run db:migrate && npm run admin:ensure && npm run start`
-- 환경변수: 위 표와 동일(`AUTH_SECRET`은 직접 무작위 값 입력)
+테스트: `pnpm test` (단위·통합), `pnpm test:rules` (규칙 엔진), `pnpm build && pnpm test:e2e` (화면).

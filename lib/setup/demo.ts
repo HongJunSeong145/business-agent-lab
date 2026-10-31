@@ -82,3 +82,72 @@ export async function seedDemo(db: Db, demoPassword?: string) {
 
   return { users: PEOPLE.length, contacts: CONTACTS.length, loginEnabled: Boolean(password_hash) };
 }
+
+/** 데모 회의록 2건(가상 학생회·가상 인물) — 스테이징 체험용 */
+const DEMO_MINUTES = [
+  {
+    title: "[데모] 제12차 정기회의",
+    date: "2026-11-03",
+    text: `[데모] 데모단과대학 학생회 제12차 정기회의록
+일시 : 2026년 11월 3일(화) 19:00
+장소 : 데모관 B101호
+
+1. 기말고사 간식 나눔 행사에 관한 건
+- 12월 9일(수) 데모관 로비에서 간식 80인분 나눔
+- 학생회비 40만원 사용, 외부 업체 없이 직접 구입
+-> 재정국은 구입 리스트를 11월 20일까지 정리
+-> 홍보국은 온라인 카드뉴스로만 홍보(무비용)
+-> 집행국은 당일 배부 인원 배치표 작성
+
+2. 기타
+- 다음 회의는 11월 10일(화)`,
+  },
+  {
+    title: "[데모] 제13차 정기회의",
+    date: "2026-11-10",
+    text: `[데모] 데모단과대학 학생회 제13차 정기회의록
+일시 : 2026년 11월 10일(화) 19:00
+장소 : 데모관 B101호
+
+1. 연말 단과대 축제에 관한 건
+- 12월 18일(금) 데모관 앞 광장, 교비 300만원
+- 무대·음향은 외부 대행사에 맡김
+-> 기획국은 축제 기획안 초안을 11월 13일까지 작성
+-> 사무국은 대행사 견적을 3곳 이상 받기
+
+2. 기타
+- 학생회실 비품 정리는 사무국이 맡음`,
+  },
+];
+
+/**
+ * 체험용 데모 내용: 사업 2개(학생회비 간식 나눔 / 교비 축제) + 표준 업무 + 회의록 2건(추출 완료 상태).
+ * 이미 있으면 건너뛴다(사용자가 고친 내용을 지우지 않음).
+ */
+export async function seedDemoContent(db: Db, today: string) {
+  const term = await ensureBaseSetup(db);
+  if (await db.project.count({ where: { term_id: term.id, title: { startsWith: "[데모]" } } })) return { created: false };
+  const presUser = await db.user.findUnique({ where: { email: PEOPLE[0]!.email } });
+  if (!presUser) return { created: false };
+  const actor = { userId: presUser.id, role: "president" as const, departmentId: null, departmentCode: null, termId: term.id };
+  const { createProject } = await import("@/lib/services/projects");
+  const { applyStandardTemplate } = await import("@/lib/services/schedule");
+  const projects = [
+    { title: "[데모] 기말고사 간식 나눔", event_start: "2026-12-09", venue: "데모관 로비", expected_beneficiaries: 80, host: "데모단과대학 학생회", organizer: "기획국", funding: [{ source: "student_fee", amount_planned: 400000 }] },
+    { title: "[데모] 연말 단과대 축제", event_start: "2026-12-18", venue: "데모관 앞 광장", expected_beneficiaries: 500, uses_external_vendor: true, host: "데모단과대학 학생회", organizer: "기획국", funding: [{ source: "school", amount_planned: 3000000 }] },
+  ];
+  for (const p of projects) {
+    const created = await createProject(db, actor, p);
+    await db.project.update({ where: { id: created.id }, data: { is_demo: true } }).catch(() => undefined);
+    await applyStandardTemplate(db, actor, created.id, undefined, today);
+  }
+  for (const m of DEMO_MINUTES) {
+    await db.meeting.create({
+      data: {
+        term_id: term.id, title: m.title, meeting_date: new Date(`${m.date}T00:00:00Z`), meeting_type: "regular", source: "paste", status: "extracted", uploaded_by: presUser.id, is_demo: true,
+        files: { create: { original_name: "붙여넣기.txt", mime: "text/plain; charset=utf-8", extracted_text: m.text, extraction_method: "paste" } },
+      },
+    });
+  }
+  return { created: true };
+}
