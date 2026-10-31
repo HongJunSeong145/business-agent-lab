@@ -102,6 +102,14 @@ export function contains(text: string, part: string): number {
   return hit / P.length;
 }
 
+/** 회의록 문장 → 업무명: 끝의 요청 표현을 떼고 다듬는다("행사당일 집행매뉴얼 작성요망" → "행사 당일 집행매뉴얼 작성") */
+export function taskTitleFrom(what: string): string {
+  let t = what.trim().replace(/[.。]+$/, "");
+  t = t.replace(/\s*(작성|제작|준비|검토|보고)?\s*(요망|필요함?|바람|할\s*것|해\s*올릴\s*것|해\s*주세요|되었으면\s*좋겠음|했으면\s*좋겠음|하기로\s*함)$/, (_m, verb: string | undefined) => (verb ? ` ${verb}` : ""));
+  t = t.replace(/행사당일/g, "행사 당일").replace(/\s{2,}/g, " ").trim();
+  return (t || what).slice(0, 150);
+}
+
 export type Member = { id: string; name: string };
 
 export const normTitle = (s: string) => s.replace(/[\s()\[\]·,.\-–_:]/g, "").toLowerCase();
@@ -296,7 +304,7 @@ export function buildProposals(input: {
     const sched = onlyProject?.event_start && tpl ? computeSchedule({ eventStart: onlyProject.event_start, today, funding: onlyProject.funding, usesVendor: onlyProject.usesVendor, params }, false).tasks.find((x) => x.key === tpl) : undefined;
     const tplFree = tpl && key && !existingTasks.some((x) => x.template_key === tpl) && !mine.some((r) => (r.payload as { template_key?: string | null }).template_key === tpl) ? tpl : null;
     pushTask(key, onlyProject, {
-      title: ai.what.slice(0, 150), description: null, lead: dept, support: [], template_key: tplFree, assignee_hint: null,
+      title: taskTitleFrom(ai.what), description: ai.what !== taskTitleFrom(ai.what) ? `회의록: "${ai.quote || ai.what}"` : null, lead: dept, support: [], template_key: tplFree, assignee_hint: null,
       due: fromMinutes ?? sched?.due ?? null,
       due_reason: fromMinutes ? `회의록에 명시된 기한(¶${ai.para})` : sched?.reason ?? null,
       due_feasible: fromMinutes ? true : sched?.feasible ?? true,

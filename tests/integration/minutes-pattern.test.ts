@@ -8,7 +8,7 @@ import { createTask, updateTask } from "@/lib/services/tasks";
 import { decideProposals } from "@/lib/services/proposals";
 import { meetingForTask } from "@/lib/services/references";
 import { planDraftTask } from "@/lib/services/plans";
-import { buildProposals, contains, guessDept, type ActionItem } from "@/lib/ai/propose";
+import { buildProposals, contains, guessDept, taskTitleFrom, type ActionItem } from "@/lib/ai/propose";
 import { replaceDemoTemplateTasks } from "@/lib/setup/demo";
 import { A2_PROMPT_VERSION, A2_SYSTEM, a2Prompt } from "@/lib/ai/prompts/a2";
 import { DEPARTMENT_ROLES } from "@/lib/ai/prompts/common";
@@ -107,6 +107,11 @@ describe("회의록 → 국서별 승인요청 패턴", () => {
     expect(await prisma.taskDependency.count({ where: { task_id: promo.id, depends_on_task_id: plan.id } })).toBe(1);
     expect(promo.status).toBe("blocked");
     expect(plan.acceptance_criteria).toEqual([{ text: "객단가·배급 방식 결정", done: false }, { text: "온라인 전용 vs 오프라인 홍보 포함 버전 비교", done: false }]);
+    // 국장이 홍보물 마감을 고쳐도(일정 자동 재계산) 회의록·역산 근거 마감(기획안 11/17)은 덮어쓰지 않는다 — 직접 점검에서 발견
+    await updateTask(prisma, head, promo.id, { due_date: "2026-11-26" });
+    const planAfter = await prisma.task.findUniqueOrThrow({ where: { id: plan.id } });
+    expect(planAfter.due_date?.toISOString().slice(0, 10)).toBe("2026-11-17");
+    expect(planAfter.due_reason).toMatch(/^역산\(AI\)/);
   });
 
   it("승인된 업무도 국장이 국서 공간에서 직접 수정(업무명·설명·마감·국서·완료 기준)", async () => {
@@ -137,6 +142,10 @@ describe("프롬프트: 국서 역할은 판단 기준(업무 목록 아님) + �
     expect(guessDept("영수 처리 준비")).toBe("finance");
     expect(guessDept("제휴 문의")).toBe("secretariat");
     expect(guessDept("회의")).toBeNull();
+    expect(taskTitleFrom("행사당일 집행매뉴얼 작성요망")).toBe("행사 당일 집행매뉴얼 작성");
+    expect(taskTitleFrom("기획안 여러 가지 버전으로 검토해 올릴 것")).toBe("기획안 여러 가지 버전으로 검토");
+    expect(taskTitleFrom("홍보물 마무리 되었으면 좋겠음.")).toBe("홍보물 마무리");
+    expect(taskTitleFrom("카드뉴스 제작")).toBe("카드뉴스 제작");
     expect(contains("간식행사 재정 준비 영수증·이체내역 처리 준비", "영수 처리 준비")).toBeGreaterThan(0.6);
     expect(contains("abc", "")).toBe(0);
   });

@@ -27,7 +27,7 @@ async function loadProjectForSchedule(db: DbLike, termId: string, projectId: str
     where: { id: projectId, term_id: termId, deleted_at: null },
     include: {
       funding_sources: true,
-      tasks: { where: { deleted_at: null, template_key: { not: null } }, select: { id: true, template_key: true, due_date: true, due_state: true, is_completed: true, status: true } },
+      tasks: { where: { deleted_at: null, template_key: { not: null } }, select: { id: true, template_key: true, due_date: true, due_state: true, due_reason: true, is_completed: true, status: true } },
     },
   });
   if (!p) throw new ServiceError("사업을 찾을 수 없습니다.", 404);
@@ -39,7 +39,7 @@ export function scheduleInputFor(p: ProjectForSchedule, params: RuleParams, toda
   if (!p.event_start) return null;
   const live = p.tasks.filter((t) => t.status !== "cancelled");
   const fixed: Partial<Record<TemplateKey, string>> = {};
-  if (useFixed) for (const t of live) if (t.due_state === "confirmed" && t.due_date) fixed[t.template_key as TemplateKey] = dateColumnToString(t.due_date);
+  if (useFixed) for (const t of live) if ((t.due_state === "confirmed" || keepsOwnDue((t as { due_reason?: string | null }).due_reason)) && t.due_date) fixed[t.template_key as TemplateKey] = dateColumnToString(t.due_date);
   return {
     eventStart: dateColumnToString(p.event_start),
     eventEnd: p.event_end ? dateColumnToString(p.event_end) : null,
@@ -116,6 +116,11 @@ async function syncEvidence(tx: Tx, p: ProjectForSchedule, params: RuleParams, r
   }
 }
 
+/** 회의록에 적힌 기한 또는 회의록 근거로 거꾸로 계산한 마감(사용자 결정 2026-10-31: 회의록 기준 마감 우선) */
+export function keepsOwnDue(reason: string | null | undefined): boolean {
+  return /^(회의록|역산)/.test(reason ?? "");
+}
+
 /**
  * 사업 일정 재계산 (5-3 ⑨, T16)
  *  - proposed: 제안 상태 마감만 새 계산값으로 바꾼다. 확정 마감은 유지(충돌은 화면 경고)
@@ -135,7 +140,8 @@ export async function recalcProjectSchedule(tx: Tx, termId: string, projectId: s
     if (t.status === "cancelled" || t.is_completed) continue;
     const s = result.tasks.find((x) => x.key === t.template_key);
     if (!s) continue;
-    if (t.due_state === "confirmed" && mode === "proposed") {
+    // 회의록 기한·AI 역산(근거 있음) 마감은 자동 재계산으로 덮어쓰지 않는다 — '일괄 재계산'(all)만 규칙값으로 되돌린다
+    if ((t.due_state === "confirmed" || keepsOwnDue(t.due_reason)) && mode === "proposed") {
       await tx.task.update({ where: { id: t.id }, data: { due_feasible: s.feasible } });
       continue;
     }
