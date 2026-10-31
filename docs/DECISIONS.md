@@ -41,14 +41,15 @@
 - **결과**: 별도 인프라(Redis) 없음. 매일 09:00 KST 모니터링·월요일 주간 요약은 pg-boss schedule로 등록.
 
 ## ADR-006. Prisma + SQL 보강, 열거형은 `text + CHECK` — `확정`
-- **배경**: Prisma 스키마만으로는 부분 고유 인덱스(업무당 lead 1개, pending 제안 dedupe), STORED 생성 컬럼, CHECK 제약을 완전히 표현하지 못한다.
+- **배경**: Prisma 스키마만으로는 부분 고유 인덱스(업무당 lead 1개, pending 제안 dedupe), 생성 컬럼·뷰, CHECK 제약을 완전히 표현하지 못한다.
 - **결정**: Prisma 마이그레이션 SQL 파일에 해당 DDL을 직접 추가하고, 각 마이그레이션에 되돌리기용 `down.sql`을 둔다. 상태값은 Postgres enum 대신 `text + CHECK`(값 추가가 가벼운 마이그레이션) + TS 쪽 zod enum으로 이중 검증.
 - **대안**: Drizzle(SQL 표현력은 높으나 지시서 권장과 다름).
 - **결과**: 스키마 드리프트를 막기 위해 통합 테스트에서 제약 위반이 실제로 거부되는지 확인한다.
 
-## ADR-007. `effective_progress`는 STORED 생성 컬럼 — `확정`
-- **결정**: `GENERATED ALWAYS AS (CASE WHEN is_completed THEN 100 ELSE COALESCE(manual_progress, ai_progress, 0) END) STORED`. Prisma 모델에서는 읽기 전용(선택 필드, 쓰기 금지 lint). 같은 공식을 `@kgb/rules.effectiveProgress()`로도 제공해 UI 낙관적 업데이트에 쓰고, 두 구현 일치 테스트를 둔다.
-- **결과**: "직접 수정 금지"(4-3)가 DB 수준에서 보장됨. 완료 해제 시 manual/ai 값이 남아 있으므로 "직전 값 복귀"(D3)가 자동 성립.
+## ADR-007. `effective_progress`는 DB 뷰 `task_progress`로 제공 — `확정(Phase 1에서 변경)`
+- **배경**: Phase 0 안은 `tasks`의 STORED 생성 컬럼이었다. Phase 1 구현 중 Prisma 7이 생성 컬럼을 일반 기본값으로 인식해, 이후 마이그레이션마다 "기본값 제거" 변경을 계속 만들어 내는 문제(스키마 드리프트)를 확인했다.
+- **결정**: `tasks`에는 컬럼을 두지 않고, 같은 공식의 **읽기 전용 뷰** `task_progress(task_id, effective_progress)`를 둔다(지시서 4-2 "저장 생성 컬럼 또는 뷰" 중 뷰). Prisma는 이 뷰를 관리하지 않으므로 드리프트가 없다(확인함: `prisma migrate diff` 결과 빈 마이그레이션). 같은 공식을 `@kgb/rules.effectiveProgress()`로도 제공하고, 통합 테스트로 둘의 결과가 같은지 확인한다.
+- **결과**: "직접 수정 금지"(4-3)는 뷰라서 구조적으로 보장된다. 완료 해제 시 manual/ai 값이 남아 있으므로 "직전 값 복귀"(D3)가 자동 성립(통합 테스트로 확인).
 
 ## ADR-008. `references` 물리 테이블명 → `reference_items` — `확정`
 - **배경**: `references`는 SQL 예약어라 원시 SQL·리포트 쿼리마다 따옴표가 필요해 실수 위험이 있다.

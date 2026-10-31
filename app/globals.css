@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+/* 디자인 토큰 — 값의 원천은 lib/design/tokens.ts (테스트로 일치 검증) */
+:root {
+  --bg: #FAFAF8;
+  --surface: #FFFFFF;
+  --border: #E7E5E1;
+  --text: #1F2328;
+  --text-muted: #5F6670;
+
+  --success: #2E7D4F;
+  --warning: #B7791F;
+  --warning-text: #8A5A12;
+  --danger: #B42318;
+  --info: #3B5B7A;
+
+  --dept-planning: #F4E1D4;
+  --dept-planning-fill: #F4E1D4;
+  --dept-planning-fill-border: #D9BBA6;
+  --dept-planning-track: #FBF3EE;
+  --dept-planning-chip: #F4E1D4;
+  --dept-planning-ink: #5A3A28;
+  --dept-planning-on-fill: #5A3A28;
+
+  --dept-finance: #8EC5E4;
+  --dept-finance-fill: #8EC5E4;
+  --dept-finance-track: #E3F1F9;
+  --dept-finance-chip: #DCEEF8;
+  --dept-finance-ink: #0F3D57;
+  --dept-finance-on-fill: #0F3D57;
+
+  --dept-secretariat: #7F0810;
+  --dept-secretariat-fill: #7F0810;
+  --dept-secretariat-track: #F0D4D6;
+  --dept-secretariat-chip: #F3DDDF;
+  --dept-secretariat-ink: #7F0810;
+  --dept-secretariat-on-fill: #FFFFFF;
+
+  --dept-promotion: #E19E86;
+  --dept-promotion-fill: #E19E86;
+  --dept-promotion-track: #F8E6DF;
+  --dept-promotion-chip: #F8E6DF;
+  --dept-promotion-ink: #6B2E1A;
+  --dept-promotion-on-fill: #6B2E1A;
+
+  --dept-operations: #276C91;
+  --dept-operations-fill: #276C91;
+  --dept-operations-track: #D6E6EF;
+  --dept-operations-chip: #DDEBF3;
+  --dept-operations-ink: #1D5270;
+  --dept-operations-on-fill: #FFFFFF;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--text-muted);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-warning-text: var(--warning-text);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --color-planning: var(--dept-planning);
+  --color-finance: var(--dept-finance);
+  --color-secretariat: var(--dept-secretariat);
+  --color-promotion: var(--dept-promotion);
+  --color-operations: var(--dept-operations);
+  --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 20px;
+  --text-xl: 24px;
+  --text-2xl: 32px;
+  --text-3xl: 40px;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+}
+
+.tabular { font-variant-numeric: tabular-nums; }

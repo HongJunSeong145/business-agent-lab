@@ -1,0 +1,1 @@
+CREATE DATABASE kgb_test OWNER kgb;

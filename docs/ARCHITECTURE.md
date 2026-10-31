@@ -96,7 +96,7 @@ flowchart TB
 | 캘린더 | FullCalendar (daygrid / interaction / list — MIT 플러그인만) | 프리미엄 플러그인 사용 안 함 |
 | 폼·검증 | zod (입력·AI 출력 공통), react-hook-form | |
 | DB | PostgreSQL 16 | |
-| ORM | Prisma | 부분 고유 인덱스·생성 컬럼·CHECK 제약은 SQL 마이그레이션으로 보강 (ADR-006) |
+| ORM | Prisma | 부분 고유 인덱스·뷰·CHECK 제약은 SQL 마이그레이션으로 보강 (ADR-006) |
 | 인증 | Auth.js v5 Credentials + JWT(슬라이딩 7일, `session_version`으로 일괄 무효화) + 자체 초대 가입 | ADR-004 |
 | 비밀번호 해시 | argon2id (`@node-rs/argon2`) | |
 | 작업 큐 | pg-boss + `ai_jobs`(도메인 상태 기록) | ADR-005 |
@@ -213,7 +213,7 @@ sequenceDiagram
 - 승인 후에도 `due_state = proposed`인 업무 마감(규칙 엔진 추적 중)은 같은 점선 스타일로 표시되고, 원클릭 "마감 확정"으로 `confirmed`가 된다. (승인 시 마감 기본 상태 → 미결정 N4)
 
 ### 6-3. 진척도 (D3·D4)
-- 업무: `effective = is_completed ? 100 : (manual_progress ?? ai_progress ?? 0)` — DB 생성 컬럼 + `@kgb/rules`의 동일 함수(두 구현 일치 테스트).
+- 업무: `effective = is_completed ? 100 : (manual_progress ?? ai_progress ?? 0)` — DB 뷰 `task_progress` + `@kgb/rules`의 동일 함수(두 구현 일치 테스트).
 - 완료 해제 시 `is_completed=false`만 바꾸므로 manual/ai 값이 그대로 남아 "직전 값 복귀"가 자동 성립.
 - 사업 진척도: 국서 가중치 `w_d` = (그 국서 주관 업무 weight 합) / (사업 전체 weight 합), 국서 진척 `p_d` = 주관 업무 effective의 weight 가중 평균, 사업 % = Σ w_d·p_d. `cancelled` 업무는 분모·분자 모두 제외. 회장 덮어쓰기(`dept_weight_override`)는 정규화 후 사용.
 - 국서 카드 진척도: 해당 국서가 주관하는 진행 중 사업 업무 + 사업 외 업무 전체의 weight 가중 평균.
