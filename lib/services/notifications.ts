@@ -18,3 +18,18 @@ export async function notifyLeaders(
   });
   return r.count;
 }
+
+/** 알림 벨 (8-1): 최근 30건 + 읽지 않은 수 */
+export async function listNotifications(db: Pick<Tx, "notification">, userId: string) {
+  const [items, unread] = await Promise.all([
+    db.notification.findMany({ where: { user_id: userId }, orderBy: { created_at: "desc" }, take: 30 }),
+    db.notification.count({ where: { user_id: userId, read_at: null } }),
+  ]);
+  return { unread, items: items.map((n) => ({ id: n.id, title: n.title, body: n.body, link: n.link, severity: n.severity, read: !!n.read_at, at: n.created_at })) };
+}
+
+/** 읽음 처리: ids 가 없으면 전부 */
+export async function markNotificationsRead(db: Pick<Tx, "notification">, userId: string, ids?: string[]) {
+  const r = await db.notification.updateMany({ where: { user_id: userId, read_at: null, ...(ids?.length ? { id: { in: ids } } : {}) }, data: { read_at: new Date() } });
+  return r.count;
+}

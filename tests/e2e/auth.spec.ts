@@ -35,8 +35,8 @@ test("관리자 로그인 → 대시보드 셸이 지시서 순서대로 실제 
   await expect(page.getByRole("tab", { selected: true })).toHaveCount(1);
 
   // 인적사항·연락망은 DB 데모 데이터 + '데모 데이터' 표시
-  await expect(page.getByRole("cell", { name: "김데모" })).toBeVisible();
-  await expect(page.getByRole("cell", { name: /데모대학교 행정실/ })).toBeVisible();
+  await expect(page.getByLabel("김데모 이름")).toHaveValue("김데모");
+  await expect(page.getByRole("table", { name: "외부 연락망" }).locator('input[value*="데모대학교 행정실"]')).toHaveCount(1);
   expect(await page.getByText("데모 데이터").count()).toBeGreaterThan(0);
 });
 

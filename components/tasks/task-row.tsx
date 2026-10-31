@@ -24,19 +24,19 @@ export function TaskRow({ task, today, deptCode }: { task: TaskRowData; today: s
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
-  const [completed, setCompleted] = useState(task.isCompleted);
-  const [manual, setManual] = useState<number | null>(task.manualProgress);
+  // 낙관적 값: 서버 값이 이 값과 같아질 때까지 유지한다.
+  // (먼저 보낸 요청의 늦은 새로고침이 오래된 값을 가져와 덮어쓰는 경쟁을 막음)
+  const [completedOverride, setCompletedOverride] = useState<boolean | null>(null);
+  const [manualOverride, setManualOverride] = useState<{ v: number | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(task.effective);
-
-  // 서버 값이 바뀌면(새로고침) 동기화
-  const [seen, setSeen] = useState(task);
-  if (seen !== task) {
-    setSeen(task);
-    setCompleted(task.isCompleted);
-    setManual(task.manualProgress);
-  }
+  if (completedOverride !== null && task.isCompleted === completedOverride && !busy) setCompletedOverride(null);
+  if (manualOverride !== null && task.manualProgress === manualOverride.v) setManualOverride(null);
+  const completed = completedOverride ?? task.isCompleted;
+  const manual = manualOverride ? manualOverride.v : task.manualProgress;
+  const setCompleted = (v: boolean | null) => setCompletedOverride(v);
+  const setManual = (v: number | null, revert = false) => setManualOverride(revert ? null : { v });
 
   const state = { is_completed: completed, manual_progress: manual, ai_progress: task.aiProgress };
   const effective = effectiveProgress(state);
@@ -62,7 +62,7 @@ export function TaskRow({ task, today, deptCode }: { task: TaskRowData; today: s
         });
       }
     } catch (e) {
-      setCompleted(!next);
+      setCompleted(null);
       toast((e as Error).message, { tone: "error" });
     } finally {
       setBusy(false);
@@ -70,14 +70,13 @@ export function TaskRow({ task, today, deptCode }: { task: TaskRowData; today: s
   }
 
   async function saveManual(value: number | null) {
-    const prev = manual;
     setManual(value);
     setOpen(false);
     try {
       await api(`/api/tasks/${task.id}/progress`, { body: { value } });
       router.refresh();
     } catch (e) {
-      setManual(prev);
+      setManual(null, true);
       toast((e as Error).message, { tone: "error" });
     }
   }

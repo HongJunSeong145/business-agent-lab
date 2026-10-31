@@ -3,6 +3,7 @@ import { getSessionUser } from "@/lib/auth/session";
 import { getStorage, isValidStorageKey } from "@/lib/storage";
 import { verifySignature } from "@/lib/storage/signed-url";
 import { unauthorized } from "@/lib/api";
+import { sniffImageMime } from "@/lib/files/deliverable";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -45,7 +46,10 @@ export async function GET(req: Request) {
     })) ??
     (await prisma.planVersion
       .findFirst({ where: { file_key: key, plan: { project: { term_id: user.termId, deleted_at: null } } }, select: { file_name: true, file_mime: true } })
-      .then((v) => (v ? { original_name: v.file_name, mime: v.file_mime } : null)));
+      .then((v) => (v ? { original_name: v.file_name, mime: v.file_mime } : null))) ??
+    (await prisma.term
+      .findFirst({ where: { id: user.termId, banner_image_key: key }, select: { id: true } })
+      .then(async (t) => (t ? { original_name: "banner", mime: sniffImageMime(await getStorage().get(key)) } : null)));
   if (!owner) return Response.json({ error: "파일을 찾을 수 없습니다." }, { status: 404 });
   const data = await getStorage().get(key);
   if (!data) return Response.json({ error: "파일을 찾을 수 없습니다." }, { status: 404 });

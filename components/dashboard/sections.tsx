@@ -13,12 +13,13 @@ import { dDayLabel, formatKoreanDate } from "@/lib/utils";
 
 import { MEETING_STATUS_LABEL as MEETING_STATUS } from "@/lib/services/meetings";
 
-export function Banner({ title, subtitle, councilName, canEdit }: { title: string; subtitle: string | null; councilName: string; canEdit: boolean }) {
+export function Banner({ title, subtitle, councilName, imageUrl, editor }: { title: string; subtitle: string | null; councilName: string; imageUrl: string | null; editor: React.ReactNode }) {
   return (
     <section
       aria-label="학생회 배너"
-      className="relative flex h-[280px] items-end overflow-hidden rounded-xl p-8 text-white"
-      style={{ background: "linear-gradient(135deg, #276C91 0%, #3B5B7A 55%, #7F0810 100%)" }}
+      className="relative flex h-[280px] items-end overflow-hidden rounded-xl bg-cover bg-center p-8 text-white"
+      style={{ backgroundImage: imageUrl ? `url("${imageUrl}")` : "linear-gradient(135deg, #276C91 0%, #3B5B7A 55%, #7F0810 100%)" }}
+      data-has-image={imageUrl ? "true" : "false"}
     >
       <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/15 to-transparent" aria-hidden />
       <div className="relative">
@@ -26,13 +27,7 @@ export function Banner({ title, subtitle, councilName, canEdit }: { title: strin
         <h1 className="mt-1 text-3xl font-bold tracking-tight md:text-[40px] md:leading-tight">{title}</h1>
         {subtitle ? <p className="mt-2 text-base opacity-90">{subtitle}</p> : null}
       </div>
-      {canEdit ? (
-        <div className="absolute top-4 right-4">
-          <span className="inline-flex h-8 cursor-not-allowed items-center rounded-lg bg-black/30 px-3 text-xs" title="배너 편집은 Phase 8에서 제공됩니다" aria-disabled="true">
-            배너 편집 · Phase 8 예정
-          </span>
-        </div>
-      ) : null}
+      {editor ? <div className="absolute top-4 right-4">{editor}</div> : null}
     </section>
   );
 }
@@ -178,85 +173,5 @@ export function DepartmentCards({ cards, today }: { cards: DeptCard[]; today: st
         );
       })}
     </section>
-  );
-}
-
-type Profile = { id: string; position_title: string | null; name: string; major: string | null; student_id: string | null; phone: string | null; gmail: string | null; school_email: string | null; is_demo: boolean };
-
-export function MemberDirectory({ profiles }: { profiles: Profile[] }) {
-  return (
-    <Card>
-      <div className="mb-3 flex items-center justify-between">
-        <CardTitle>학생회 인적사항</CardTitle>
-        <ComingSoon phase={8} label="편집" />
-      </div>
-      {profiles.length === 0 ? (
-        <EmptyState title="등록된 인적사항이 없습니다" />
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="border-b border-border text-xs text-muted">
-              <tr>{["직책", "이름", "학과", "학번", "연락처", "G-mail", "학교메일"].map((h) => <th key={h} className="px-2 py-2 font-medium">{h}</th>)}</tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {profiles.map((p) => (
-                <tr key={p.id}>
-                  <td className="px-2 py-2">{p.position_title}{p.is_demo ? <DemoBadge className="ml-1" /> : null}</td>
-                  <td className="px-2 py-2 font-medium">{p.name}</td>
-                  <td className="px-2 py-2">{p.major}</td>
-                  <td className="tabular px-2 py-2">{p.student_id}</td>
-                  <td className="tabular px-2 py-2">{p.phone ? <a href={`tel:${p.phone}`} className="hover:underline">{p.phone}</a> : null}</td>
-                  <td className="px-2 py-2">{p.gmail ? <a href={`mailto:${p.gmail}`} className="hover:underline">{p.gmail}</a> : null}</td>
-                  <td className="px-2 py-2">{p.school_email ? <a href={`mailto:${p.school_email}`} className="hover:underline">{p.school_email}</a> : null}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Card>
-  );
-}
-
-export function ContactDirectory({
-  columns,
-  rows,
-}: {
-  columns: { key: string; label: string }[];
-  rows: { id: string; data: unknown; is_demo: boolean }[];
-}) {
-  return (
-    <Card>
-      <div className="mb-3 flex items-center justify-between">
-        <CardTitle>외부 연락망</CardTitle>
-        <ComingSoon phase={8} label="편집" />
-      </div>
-      {rows.length === 0 ? (
-        <EmptyState title="등록된 연락처가 없습니다" />
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="border-b border-border text-xs text-muted">
-              <tr>{columns.map((c) => <th key={c.key} className="px-2 py-2 font-medium">{c.label}</th>)}</tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {rows.map((r) => {
-                const data = (r.data ?? {}) as Record<string, string>;
-                return (
-                  <tr key={r.id}>
-                    {columns.map((c, i) => (
-                      <td key={c.key} className="px-2 py-2">
-                        {data[c.key] ?? ""}
-                        {i === 0 && r.is_demo ? <DemoBadge className="ml-1" /> : null}
-                      </td>
-                    ))}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Card>
   );
 }
