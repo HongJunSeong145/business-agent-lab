@@ -60,7 +60,7 @@ async function handleError(db: Db, job: { id: string; attempts: number; payload:
 
 async function aiSettings(db: Db, termId: string) {
   return {
-    budgetKrw: await getNumberSetting(db, termId, "AI_DAILY_BUDGET_KRW", 3000),
+    budgetKrw: await getNumberSetting(db, termId, "AI_DAILY_BUDGET_KRW", 10000),
     usdKrw: Number(process.env.USD_KRW ?? 1400),
   };
 }
