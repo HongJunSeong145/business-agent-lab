@@ -1,0 +1,18 @@
+# 로컬 개발용 PostgreSQL 16 — `docker compose up -d`
+# 개발 DB(kgb_dev)와 테스트 DB(kgb_test)를 함께 만든다. 로컬 전용 비밀번호이므로 배포에 쓰지 말 것.
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kgb
+      POSTGRES_PASSWORD: kgb_dev_pw
+      POSTGRES_DB: kgb_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - kgb_pgdata:/var/lib/postgresql/data
+      - ./scripts/docker-init-test-db.sql:/docker-entrypoint-initdb.d/10-test-db.sql:ro
+
+volumes:
+  kgb_pgdata:

@@ -197,7 +197,7 @@ erDiagram
 |---|---|---|
 | `projects` | `category ∈ {event, promotion, partnership, welfare, admin, other}`, `status ∈ {proposed, planning, approved, in_progress, done, cancelled, postponed}`, `quarter` 1~4(규칙 엔진 계산값 저장) | 🆕 `promo_tier ∈ {free, low, high} null` — 홍보 등급(PRO_TIER 결과, 일정 계산 입력) |
 | `project_funding_sources` | `source ∈ {school, student_fee}`, `UNIQUE(project_id, source)` | — |
-| `tasks` | `status ∈ {blocked, todo, in_progress, review, done, cancelled}`, `due_state ∈ {proposed, confirmed}`, `ai_progress`/`manual_progress` 0~100 CHECK, `weight > 0` | 🆕 `due_feasible` (infeasible 표시), 🆕 `allow_draft_start`(국장의 초안 기반 선착수 허용, 기본 false — Q7), `effective_progress` = **STORED 생성 컬럼**: `CASE WHEN is_completed THEN 100 ELSE COALESCE(manual_progress, ai_progress, 0) END` (ADR-007) |
+| `tasks` | `status ∈ {blocked, todo, in_progress, review, done, cancelled}`, `due_state ∈ {proposed, confirmed}`, `ai_progress`/`manual_progress` 0~100 CHECK, `weight > 0` | 🆕 `due_feasible` (infeasible 표시), 🆕 `allow_draft_start`(국장의 초안 기반 선착수 허용, 기본 false — Q7), `effective_progress`는 컬럼이 아니라 **뷰 `task_progress`** 로 제공: `CASE WHEN is_completed THEN 100 ELSE COALESCE(manual_progress, ai_progress, 0) END` (ADR-007) |
 | `task_departments` | `role ∈ {lead, support}`, `UNIQUE(task_id, department_id)`, **`UNIQUE(task_id) WHERE role='lead'`** + 서비스 계층에서 "정확히 1개" 검사(0개 방지는 트랜잭션 말미 검증) | — |
 | `task_assignees` | `PRIMARY KEY(task_id, user_id)` | — |
 | `task_dependencies` | `type ∈ {finish_to_start, approval_required, draft_ok}`, `UNIQUE(task_id, depends_on_task_id)`, `CHECK(task_id <> depends_on_task_id)`, 삽입 시 순환 검사(재귀 CTE, 서비스 계층 + 직렬화 잠금) | — |
@@ -271,8 +271,8 @@ erDiagram
 |---|---|---|
 | 업무당 lead 정확히 1 | 부분 고유 인덱스(≤1) | 트랜잭션 말미 검사(=1) |
 | 의존 순환 금지 | 자기참조 CHECK | 재귀 CTE 순환 검사 + 사업 단위 advisory lock |
-| effective_progress 공식 | 생성 컬럼(직접 수정 불가) | `@kgb/rules.effectiveProgress()` 동일 공식, 일치 테스트 |
+| effective_progress 공식 | 뷰 `task_progress`(직접 수정 불가) | `@kgb/rules.effectiveProgress()` 동일 공식, 일치 테스트 |
 | 사업 취소 연쇄 | — | 서비스: 미완료 업무 `cancelled`, 증빙 보존, 캘린더 취소선(사업 status로 판단, 삭제 없음) |
 | 제안 중복 | `UNIQUE(dedupe_key) WHERE status='pending'` | dedupe_key 계산 함수 |
 | 알림 중복 | `UNIQUE(user_id, dedupe_key)` | `INSERT … ON CONFLICT DO NOTHING` |
-| 마이그레이션 | 모든 마이그레이션에 down 스크립트(`prisma/migrations/*/down.sql`) 작성 | 운영 DB 파괴적 변경 자동 실행 금지 |
+| 마이그레이션 | 모든 마이그레이션에 되돌리기 스크립트(`prisma/migrations/*/down.sql`) 작성 — init 의 down.sql 은 적용·재적용으로 검증함 | 운영 DB 파괴적 변경 자동 실행 금지 |

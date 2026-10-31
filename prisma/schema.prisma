@@ -1,0 +1,904 @@
+// KGB_Agent 데이터 모델 — docs/DATA_MODEL.md 와 1:1 대응.
+// 필드명은 문서와 같은 snake_case 를 그대로 쓴다.
+// 상태값(enum)은 text + CHECK 제약(마이그레이션 SQL)으로 관리한다 — ADR-006.
+// 부분 고유 인덱스, 생성 컬럼, CHECK 제약은 migrations/*/migration.sql 하단에 수동 추가.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────── 조직·사용자 ─────────────────────────
+
+model Council {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  name       String
+  university String
+  college    String
+  is_demo    Boolean  @default(false)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  terms Term[]
+
+  @@map("councils")
+}
+
+model Term {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  council_id       String    @db.Uuid
+  term_number      Int
+  name             String?
+  start_date       DateTime  @db.Date
+  end_date         DateTime  @db.Date
+  banner_image_key String?
+  banner_title     String?
+  banner_subtitle  String?
+  q1_start         DateTime  @db.Date
+  q1_end           DateTime  @db.Date
+  q2_start         DateTime  @db.Date
+  q2_end           DateTime  @db.Date
+  q3_start         DateTime  @db.Date
+  q3_end           DateTime  @db.Date
+  q4_start         DateTime  @db.Date
+  q4_end           DateTime  @db.Date
+  is_current       Boolean   @default(false)
+  is_demo          Boolean   @default(false)
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @updatedAt @db.Timestamptz(6)
+
+  council              Council               @relation(fields: [council_id], references: [id], onDelete: Restrict)
+  departments          Department[]
+  memberships          Membership[]
+  member_profiles      MemberProfile[]
+  settings             Setting[]
+  meetings             Meeting[]
+  proposals            Proposal[]
+  projects             Project[]
+  schedule_events      ScheduleEvent[]
+  budget_periods       BudgetPeriod[]
+  contact_columns      ContactColumn[]
+  contact_rows         ContactRow[]
+  invitations          Invitation[]
+
+  @@unique([council_id, term_number])
+  @@map("terms")
+}
+
+model Department {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  term_id       String   @db.Uuid
+  code          String
+  name_ko       String
+  color_hex     String
+  display_order Int
+  is_demo       Boolean  @default(false)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @updatedAt @db.Timestamptz(6)
+
+  term             Term             @relation(fields: [term_id], references: [id], onDelete: Cascade)
+  memberships      Membership[]
+  task_departments TaskDepartment[]
+  reference_items  ReferenceItem[]
+  notifications    Notification[]
+  schedule_events  ScheduleEvent[]
+  invitations      Invitation[]
+
+  @@unique([term_id, code])
+  @@map("departments")
+}
+
+model User {
+  id                  String    @id @default(uuid(7)) @db.Uuid
+  email               String    @unique
+  password_hash       String?
+  display_name        String
+  status              String    @default("invited")
+  last_login_at       DateTime? @db.Timestamptz(6)
+  password_changed_at DateTime? @db.Timestamptz(6)
+  session_version     Int       @default(0)
+  is_demo             Boolean   @default(false)
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime  @updatedAt @db.Timestamptz(6)
+
+  memberships          Membership[]
+  member_profiles      MemberProfile[]
+  invitations_sent     Invitation[]         @relation("InvitedBy")
+  meetings_uploaded    Meeting[]
+  task_assignees       TaskAssignee[]
+  comments             Comment[]
+  notifications        Notification[]
+
+  @@map("users")
+}
+
+model Membership {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  user_id        String   @db.Uuid
+  term_id        String   @db.Uuid
+  department_id  String?  @db.Uuid
+  role           String
+  position_title String?
+  is_demo        Boolean  @default(false)
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @updatedAt @db.Timestamptz(6)
+
+  user       User        @relation(fields: [user_id], references: [id], onDelete: Restrict)
+  term       Term        @relation(fields: [term_id], references: [id], onDelete: Cascade)
+  department Department? @relation(fields: [department_id], references: [id], onDelete: SetNull)
+
+  @@unique([user_id, term_id])
+  @@map("memberships")
+}
+
+model MemberProfile {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  term_id        String    @db.Uuid
+  user_id        String?   @db.Uuid
+  position_title String?
+  name           String
+  major          String?
+  student_id     String?
+  phone          String?
+  gmail          String?
+  school_email   String?
+  display_order  Int       @default(0)
+  is_demo        Boolean   @default(false)
+  deleted_at     DateTime? @db.Timestamptz(6)
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime  @updatedAt @db.Timestamptz(6)
+
+  term Term  @relation(fields: [term_id], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([term_id, display_order])
+  @@map("member_profiles")
+}
+
+model Invitation {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  email         String
+  term_id       String    @db.Uuid
+  role          String
+  department_id String?   @db.Uuid
+  token_hash    String    @unique
+  expires_at    DateTime  @db.Timestamptz(6)
+  accepted_at   DateTime? @db.Timestamptz(6)
+  revoked_at    DateTime? @db.Timestamptz(6)
+  invited_by    String?   @db.Uuid
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime  @updatedAt @db.Timestamptz(6)
+
+  term       Term        @relation(fields: [term_id], references: [id], onDelete: Cascade)
+  department Department? @relation(fields: [department_id], references: [id], onDelete: SetNull)
+  inviter    User?       @relation("InvitedBy", fields: [invited_by], references: [id], onDelete: SetNull)
+
+  @@index([email])
+  @@map("invitations")
+}
+
+model LoginAttempt {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  email_hash String
+  ip         String?
+  success    Boolean
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([email_hash, created_at])
+  @@index([ip, created_at])
+  @@map("login_attempts")
+}
+
+model Setting {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  term_id    String   @db.Uuid
+  key        String
+  value      Json
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  term Term @relation(fields: [term_id], references: [id], onDelete: Cascade)
+
+  @@unique([term_id, key])
+  @@map("settings")
+}
+
+// ───────────────────────── 회의록 ─────────────────────────
+
+model Meeting {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  term_id      String    @db.Uuid
+  title        String
+  meeting_date DateTime  @db.Date
+  meeting_type String
+  source       String
+  status       String    @default("uploaded")
+  uploaded_by  String    @db.Uuid
+  is_demo      Boolean   @default(false)
+  deleted_at   DateTime? @db.Timestamptz(6)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime  @updatedAt @db.Timestamptz(6)
+
+  term     Term              @relation(fields: [term_id], references: [id], onDelete: Cascade)
+  uploader User              @relation(fields: [uploaded_by], references: [id], onDelete: Restrict)
+  files    MeetingFile[]
+  analyses MeetingAnalysis[]
+  projects Project[]
+
+  @@index([term_id, meeting_date])
+  @@map("meetings")
+}
+
+model MeetingFile {
+  id                String   @id @default(uuid(7)) @db.Uuid
+  meeting_id        String   @db.Uuid
+  storage_key       String?
+  original_name     String?
+  mime              String?
+  size              BigInt?
+  sha256            String?
+  extracted_text    String?
+  extraction_method String?
+  extraction_error  String?
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @updatedAt @db.Timestamptz(6)
+
+  meeting Meeting @relation(fields: [meeting_id], references: [id], onDelete: Cascade)
+
+  @@map("meeting_files")
+}
+
+model MeetingAnalysis {
+  id                String   @id @default(uuid(7)) @db.Uuid
+  meeting_id        String   @db.Uuid
+  version           Int
+  summary           Json
+  model             String?
+  prompt_version    String?
+  created_by_job_id String?  @db.Uuid
+  edited_by         String?  @db.Uuid
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @updatedAt @db.Timestamptz(6)
+
+  meeting Meeting @relation(fields: [meeting_id], references: [id], onDelete: Cascade)
+  job     AiJob?  @relation(fields: [created_by_job_id], references: [id], onDelete: SetNull)
+
+  @@unique([meeting_id, version])
+  @@map("meeting_analyses")
+}
+
+// ───────────────────────── AI 제안 ─────────────────────────
+
+model Proposal {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  term_id          String    @db.Uuid
+  source_type      String
+  source_id        String?   @db.Uuid
+  kind             String
+  target_id        String?   @db.Uuid
+  project_key      String?
+  payload          Json
+  before_snapshot  Json?
+  evidence         Json?
+  inferred         Boolean   @default(false)
+  inference_reason String?
+  confidence       Decimal?  @db.Decimal(4, 3)
+  status           String    @default("pending")
+  decided_by       String?   @db.Uuid
+  decided_at       DateTime? @db.Timestamptz(6)
+  dedupe_key       String
+  is_demo          Boolean   @default(false)
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @updatedAt @db.Timestamptz(6)
+
+  term  Term   @relation(fields: [term_id], references: [id], onDelete: Cascade)
+  tasks Task[]
+
+  @@index([term_id, status])
+  @@index([source_type, source_id])
+  @@map("proposals")
+}
+
+// ───────────────────────── 사업·일정 ─────────────────────────
+
+model Project {
+  id                      String    @id @default(uuid(7)) @db.Uuid
+  term_id                 String    @db.Uuid
+  title                   String
+  category                String    @default("event")
+  status                  String    @default("planning")
+  event_start             DateTime? @db.Date
+  event_end               DateTime? @db.Date
+  venue                   String?
+  expected_beneficiaries  Int?
+  host                    String?
+  organizer               String?
+  uses_external_vendor    Boolean   @default(false)
+  promo_tier              String?
+  dept_weight_override    Json?
+  quarter                 Int?
+  created_from_meeting_id String?   @db.Uuid
+  is_demo                 Boolean   @default(false)
+  deleted_at              DateTime? @db.Timestamptz(6)
+  created_at              DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime  @updatedAt @db.Timestamptz(6)
+
+  term                  Term                    @relation(fields: [term_id], references: [id], onDelete: Cascade)
+  created_from_meeting  Meeting?                @relation(fields: [created_from_meeting_id], references: [id], onDelete: SetNull)
+  funding_sources       ProjectFundingSource[]
+  schedule_events       ScheduleEvent[]
+  tasks                 Task[]
+  plan                  Plan?
+  reference_items       ReferenceItem[]
+  budget_lines          BudgetLine[]
+  purchase_items        PurchaseItem[]
+  evidence_requirements EvidenceRequirement[]
+  evidence_items        EvidenceItem[]
+  partner_leads         PartnerLead[]
+
+  @@index([term_id, event_start])
+  @@map("projects")
+}
+
+model ProjectFundingSource {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  project_id     String   @db.Uuid
+  source         String
+  amount_planned BigInt   @default(0)
+  amount_actual  BigInt?
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @updatedAt @db.Timestamptz(6)
+
+  project Project @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  @@unique([project_id, source])
+  @@map("project_funding_sources")
+}
+
+model ScheduleEvent {
+  id                  String    @id @default(uuid(7)) @db.Uuid
+  term_id             String    @db.Uuid
+  project_id          String?   @db.Uuid
+  task_id             String?   @db.Uuid
+  title               String
+  start               DateTime  @db.Timestamptz(6)
+  end                 DateTime? @db.Timestamptz(6)
+  all_day             Boolean   @default(true)
+  kind                String
+  state               String    @default("proposed")
+  origin              String
+  rule_key            String?
+  color_department_id String?   @db.Uuid
+  is_demo             Boolean   @default(false)
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime  @updatedAt @db.Timestamptz(6)
+
+  term             Term        @relation(fields: [term_id], references: [id], onDelete: Cascade)
+  project          Project?    @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  task             Task?       @relation(fields: [task_id], references: [id], onDelete: Cascade)
+  color_department Department? @relation(fields: [color_department_id], references: [id], onDelete: SetNull)
+
+  @@index([term_id, start])
+  @@map("schedule_events")
+}
+
+// ───────────────────────── 업무 ─────────────────────────
+
+model Task {
+  id                    String    @id @default(uuid(7)) @db.Uuid
+  project_id            String?   @db.Uuid
+  title                 String
+  description           String?
+  template_key          String?
+  status                String    @default("todo")
+  due_date              DateTime? @db.Date
+  due_time              DateTime? @db.Time(0)
+  due_state             String    @default("proposed")
+  due_reason            String?
+  due_feasible          Boolean   @default(true)
+  start_date            DateTime? @db.Date
+  weight                Decimal   @default(1) @db.Decimal(6, 2)
+  ai_progress           Int?
+  manual_progress       Int?
+  is_completed          Boolean   @default(false)
+  completed_by          String?   @db.Uuid
+  completed_at          DateTime? @db.Timestamptz(6)
+  // effective_progress 는 DB 뷰 "task_progress" 로 제공(ADR-007). 이 테이블에는 컬럼이 없다.
+  needs_reference       Boolean   @default(false)
+  acceptance_criteria   Json?
+  allow_draft_start     Boolean   @default(false)
+  started_on_draft_plan Boolean   @default(false)
+  source_proposal_id    String?   @db.Uuid
+  is_demo               Boolean   @default(false)
+  deleted_at            DateTime? @db.Timestamptz(6)
+  created_at            DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime  @updatedAt @db.Timestamptz(6)
+
+  project              Project?             @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  source_proposal      Proposal?            @relation(fields: [source_proposal_id], references: [id], onDelete: SetNull)
+  departments          TaskDepartment[]
+  assignees            TaskAssignee[]
+  dependencies         TaskDependency[]     @relation("TaskDeps")
+  dependents           TaskDependency[]     @relation("TaskDependsOn")
+  progress_history     ProgressHistory[]
+  comments             Comment[]
+  schedule_events      ScheduleEvent[]
+  deliverables         Deliverable[]
+  progress_evaluations ProgressEvaluation[]
+  reference_items      ReferenceItem[]
+  reference_requests   ReferenceRequest[]
+
+  @@index([project_id])
+  @@index([due_date])
+  @@map("tasks")
+}
+
+model TaskDepartment {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  task_id       String   @db.Uuid
+  department_id String   @db.Uuid
+  role          String
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @updatedAt @db.Timestamptz(6)
+
+  task       Task       @relation(fields: [task_id], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [department_id], references: [id], onDelete: Restrict)
+
+  @@unique([task_id, department_id])
+  @@index([department_id])
+  @@map("task_departments")
+}
+
+model TaskAssignee {
+  task_id    String   @db.Uuid
+  user_id    String   @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  task Task @relation(fields: [task_id], references: [id], onDelete: Cascade)
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@id([task_id, user_id])
+  @@map("task_assignees")
+}
+
+model TaskDependency {
+  id                 String   @id @default(uuid(7)) @db.Uuid
+  task_id            String   @db.Uuid
+  depends_on_task_id String   @db.Uuid
+  type               String   @default("finish_to_start")
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime @updatedAt @db.Timestamptz(6)
+
+  task       Task @relation("TaskDeps", fields: [task_id], references: [id], onDelete: Cascade)
+  depends_on Task @relation("TaskDependsOn", fields: [depends_on_task_id], references: [id], onDelete: Cascade)
+
+  @@unique([task_id, depends_on_task_id])
+  @@map("task_dependencies")
+}
+
+model ProgressHistory {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  task_id       String   @db.Uuid
+  field         String
+  old_value     String?
+  new_value     String?
+  actor         String
+  actor_user_id String?  @db.Uuid
+  reason        String?
+  evaluation_id String?  @db.Uuid
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @updatedAt @db.Timestamptz(6)
+
+  task Task @relation(fields: [task_id], references: [id], onDelete: Cascade)
+
+  @@index([task_id, created_at])
+  @@map("progress_history")
+}
+
+model Comment {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  task_id    String    @db.Uuid
+  author_id  String    @db.Uuid
+  body       String
+  mentions   Json?
+  parent_id  String?   @db.Uuid
+  deleted_at DateTime? @db.Timestamptz(6)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at DateTime  @updatedAt @db.Timestamptz(6)
+
+  task   Task @relation(fields: [task_id], references: [id], onDelete: Cascade)
+  author User @relation(fields: [author_id], references: [id], onDelete: Restrict)
+
+  @@index([task_id, created_at])
+  @@map("comments")
+}
+
+// ───────────────────────── 작업물 ─────────────────────────
+
+model Deliverable {
+  id                 String    @id @default(uuid(7)) @db.Uuid
+  task_id            String    @db.Uuid
+  title              String
+  current_version_id String?   @db.Uuid
+  deleted_at         DateTime? @db.Timestamptz(6)
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime  @updatedAt @db.Timestamptz(6)
+
+  task     Task                 @relation(fields: [task_id], references: [id], onDelete: Cascade)
+  versions DeliverableVersion[]
+
+  @@map("deliverables")
+}
+
+model DeliverableVersion {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  deliverable_id String    @db.Uuid
+  version_no     Int
+  storage_key    String?
+  external_url   String?
+  mime           String?
+  size           BigInt?
+  sha256         String?
+  note           String?
+  uploaded_by    String    @db.Uuid
+  extracted_text String?
+  thumbnail_key  String?
+  deleted_at     DateTime? @db.Timestamptz(6)
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime  @updatedAt @db.Timestamptz(6)
+
+  deliverable Deliverable          @relation(fields: [deliverable_id], references: [id], onDelete: Cascade)
+  evaluations ProgressEvaluation[]
+
+  @@unique([deliverable_id, version_no])
+  @@map("deliverable_versions")
+}
+
+model ProgressEvaluation {
+  id                     String   @id @default(uuid(7)) @db.Uuid
+  task_id                String   @db.Uuid
+  deliverable_version_id String   @db.Uuid
+  score                  Int
+  rubric_results         Json
+  missing_items          Json?
+  suggestions            Json?
+  model                  String?
+  prompt_version         String?
+  created_at             DateTime @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime @updatedAt @db.Timestamptz(6)
+
+  task                Task               @relation(fields: [task_id], references: [id], onDelete: Cascade)
+  deliverable_version DeliverableVersion @relation(fields: [deliverable_version_id], references: [id], onDelete: Cascade)
+
+  @@map("progress_evaluations")
+}
+
+// ───────────────────────── 기획안 ─────────────────────────
+
+model Plan {
+  id                 String   @id @default(uuid(7)) @db.Uuid
+  project_id         String   @unique @db.Uuid
+  current_version_id String?  @db.Uuid
+  status             String   @default("draft")
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime @updatedAt @db.Timestamptz(6)
+
+  project  Project       @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  versions PlanVersion[]
+
+  @@map("plans")
+}
+
+model PlanVersion {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  plan_id     String    @db.Uuid
+  version_no  Int
+  fields      Json
+  file_key    String?
+  author_id   String    @db.Uuid
+  approved_by String?   @db.Uuid
+  approved_at DateTime? @db.Timestamptz(6)
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime  @updatedAt @db.Timestamptz(6)
+
+  plan Plan @relation(fields: [plan_id], references: [id], onDelete: Cascade)
+
+  @@unique([plan_id, version_no])
+  @@map("plan_versions")
+}
+
+// ───────────────────────── 레퍼런스 (ADR-008: references → reference_items) ─────────────────────────
+
+model ReferenceItem {
+  id                       String   @id @default(uuid(7)) @db.Uuid
+  task_id                  String?  @db.Uuid
+  project_id               String?  @db.Uuid
+  department_id            String?  @db.Uuid
+  kind                     String
+  title                    String
+  url                      String?
+  storage_key              String?
+  summary                  String?
+  relevance_note           String?
+  origin                   String
+  request_id               String?  @db.Uuid
+  needs_review_before_send Boolean  @default(false)
+  created_at               DateTime @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime @updatedAt @db.Timestamptz(6)
+
+  task       Task?             @relation(fields: [task_id], references: [id], onDelete: Cascade)
+  project    Project?          @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  department Department?       @relation(fields: [department_id], references: [id], onDelete: SetNull)
+  request    ReferenceRequest? @relation(fields: [request_id], references: [id], onDelete: SetNull)
+
+  @@map("reference_items")
+}
+
+model ReferenceRequest {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  task_id          String   @db.Uuid
+  requested_by     String   @db.Uuid
+  instruction      String?
+  status           String   @default("queued")
+  context_snapshot Json?
+  error            String?
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime @updatedAt @db.Timestamptz(6)
+
+  task  Task            @relation(fields: [task_id], references: [id], onDelete: Cascade)
+  items ReferenceItem[]
+
+  @@map("reference_requests")
+}
+
+// ───────────────────────── 재정 ─────────────────────────
+
+model BudgetPeriod {
+  id                String   @id @default(uuid(7)) @db.Uuid
+  term_id           String   @db.Uuid
+  quarter           Int
+  review_group      String
+  budget_status     String   @default("draft")
+  settlement_status String   @default("draft")
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @updatedAt @db.Timestamptz(6)
+
+  term  Term         @relation(fields: [term_id], references: [id], onDelete: Cascade)
+  lines BudgetLine[]
+
+  @@unique([term_id, quarter])
+  @@map("budget_periods")
+}
+
+model BudgetLine {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  budget_period_id String   @db.Uuid
+  project_id       String?  @db.Uuid
+  funding_source   String?
+  category         String?
+  item             String
+  planned_amount   BigInt   @default(0)
+  actual_amount    BigInt?
+  tax_amount       BigInt   @default(0)
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime @updatedAt @db.Timestamptz(6)
+
+  budget_period BudgetPeriod @relation(fields: [budget_period_id], references: [id], onDelete: Cascade)
+  project       Project?     @relation(fields: [project_id], references: [id], onDelete: SetNull)
+
+  @@map("budget_lines")
+}
+
+model PurchaseItem {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  project_id     String    @db.Uuid
+  name           String
+  qty            Int       @default(1)
+  unit_price     BigInt    @default(0)
+  vendor         String?
+  funding_source String?
+  status         String    @default("listed")
+  purchased_at   DateTime? @db.Timestamptz(6)
+  purchased_by   String?   @db.Uuid
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime  @updatedAt @db.Timestamptz(6)
+
+  project        Project        @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  evidence_items EvidenceItem[]
+
+  @@map("purchase_items")
+}
+
+model EvidenceRequirement {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  project_id  String    @db.Uuid
+  type        String
+  required    Boolean   @default(true)
+  rule_source String?
+  due_date    DateTime? @db.Date
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime  @updatedAt @db.Timestamptz(6)
+
+  project Project        @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  items   EvidenceItem[]
+
+  @@map("evidence_requirements")
+}
+
+model EvidenceItem {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  requirement_id   String?   @db.Uuid
+  project_id       String    @db.Uuid
+  purchase_item_id String?   @db.Uuid
+  storage_key      String
+  uploaded_by      String    @db.Uuid
+  note             String?
+  verified_by      String?   @db.Uuid
+  verified_at      DateTime? @db.Timestamptz(6)
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @updatedAt @db.Timestamptz(6)
+
+  requirement   EvidenceRequirement? @relation(fields: [requirement_id], references: [id], onDelete: SetNull)
+  project       Project              @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  purchase_item PurchaseItem?        @relation(fields: [purchase_item_id], references: [id], onDelete: SetNull)
+
+  @@map("evidence_items")
+}
+
+// ───────────────────────── 연락망·제휴 ─────────────────────────
+
+model ContactColumn {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  term_id       String    @db.Uuid
+  key           String
+  label         String
+  type          String    @default("text")
+  options       Json?
+  display_order Int       @default(0)
+  is_default    Boolean   @default(false)
+  deleted_at    DateTime? @db.Timestamptz(6)
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime  @updatedAt @db.Timestamptz(6)
+
+  term Term @relation(fields: [term_id], references: [id], onDelete: Cascade)
+
+  @@unique([term_id, key])
+  @@map("contact_columns")
+}
+
+model ContactRow {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  term_id       String    @db.Uuid
+  category      String    @default("기타")
+  data          Json      @default("{}")
+  display_order Int       @default(0)
+  created_by    String?   @db.Uuid
+  is_demo       Boolean   @default(false)
+  deleted_at    DateTime? @db.Timestamptz(6)
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime  @updatedAt @db.Timestamptz(6)
+
+  term          Term          @relation(fields: [term_id], references: [id], onDelete: Cascade)
+  partner_leads PartnerLead[]
+
+  @@map("contact_rows")
+}
+
+model PartnerLead {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  project_id      String    @db.Uuid
+  contact_row_id  String?   @db.Uuid
+  company_name    String
+  website         String?
+  contact_channel String?
+  status          String    @default("candidate")
+  last_contact_at DateTime? @db.Timestamptz(6)
+  note            String?
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @updatedAt @db.Timestamptz(6)
+
+  project     Project     @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  contact_row ContactRow? @relation(fields: [contact_row_id], references: [id], onDelete: SetNull)
+
+  @@map("partner_leads")
+}
+
+// ───────────────────────── 시스템 ─────────────────────────
+
+model Notification {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  user_id       String    @db.Uuid
+  department_id String?   @db.Uuid
+  type          String
+  title         String
+  body          String?
+  link          String?
+  severity      String    @default("info")
+  read_at       DateTime? @db.Timestamptz(6)
+  dedupe_key    String?
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime  @updatedAt @db.Timestamptz(6)
+
+  user       User        @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  department Department? @relation(fields: [department_id], references: [id], onDelete: SetNull)
+
+  @@unique([user_id, dedupe_key])
+  @@index([user_id, read_at])
+  @@map("notifications")
+}
+
+model ActivityLog {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  actor_id    String?  @db.Uuid
+  actor_kind  String
+  action      String
+  entity_type String
+  entity_id   String?  @db.Uuid
+  diff        Json?
+  ip          String?
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([entity_type, entity_id])
+  @@index([created_at])
+  @@map("activity_logs")
+}
+
+model AiJob {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  type            String
+  payload         Json
+  status          String    @default("queued")
+  attempts        Int       @default(0)
+  error           String?
+  started_at      DateTime? @db.Timestamptz(6)
+  finished_at     DateTime? @db.Timestamptz(6)
+  idempotency_key String    @unique
+  pgboss_job_id   String?
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @updatedAt @db.Timestamptz(6)
+
+  runs     AiRun[]
+  analyses MeetingAnalysis[]
+
+  @@map("ai_jobs")
+}
+
+model AiRun {
+  id                String   @id @default(uuid(7)) @db.Uuid
+  job_id            String?  @db.Uuid
+  agent             String
+  model             String
+  prompt_version    String?
+  input_tokens      Int?
+  output_tokens     Int?
+  latency_ms        Int?
+  cost_estimate_krw Decimal? @db.Decimal(12, 2)
+  output_valid      Boolean
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @updatedAt @db.Timestamptz(6)
+
+  job AiJob? @relation(fields: [job_id], references: [id], onDelete: SetNull)
+
+  @@index([created_at])
+  @@map("ai_runs")
+}
+
+/// STORAGE_DRIVER=db 일 때 파일 본문 저장소 — ADR-020
+model StoredFile {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  storage_key String   @unique
+  data        Bytes
+  mime        String?
+  size        BigInt
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime @updatedAt @db.Timestamptz(6)
+
+  @@map("stored_files")
+}
