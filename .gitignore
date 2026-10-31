@@ -3,7 +3,7 @@ node_modules/
 out/
 coverage/
 lib/generated/
-storage/
+/storage/
 test-results/
 playwright-report/
 *.tsbuildinfo
