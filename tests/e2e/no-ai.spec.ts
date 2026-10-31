@@ -27,4 +27,14 @@ test("T25: AI 없이도 회의록 업로드·열람과 업무 직접 만들기�
   await td.getByRole("button", { name: "업무 추가" }).click();
   await expect(td).toBeHidden();
   await expect(page.getByRole("link", { name: "AI 없이 만든 업무", exact: true })).toBeVisible();
+
+  // 작업물: 올릴 수 있고, AI 평가 대신 수동 진척도 안내
+  await page.getByRole("link", { name: "AI 없이 만든 업무", exact: true }).click();
+  await page.getByRole("tab", { name: "작업물" }).click();
+  const tab = page.getByTestId("deliverables-tab");
+  await expect(tab).toContainText("AI 일시 사용 불가");
+  await tab.getByLabel("작업물 파일").setInputFiles({ name: "초안.txt", mimeType: "text/plain", buffer: Buffer.from("기획안 초안") });
+  await tab.getByRole("button", { name: "올리기" }).click();
+  await expect(page.getByText("v1 업로드 완료.", { exact: true })).toBeVisible();
+  await expect(tab.getByTestId("eval-status")).toContainText("AI 일시 사용 불가");
 });

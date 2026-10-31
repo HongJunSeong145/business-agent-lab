@@ -58,7 +58,7 @@ export async function callStructured<T>(
   let lastIssues = "";
   for (let attempt = 1; attempt <= 2; attempt++) {
     const started = Date.now();
-    const res = await provider.complete({ agent: opts.agent, system: opts.system, documents: opts.documents, prompt, schema: jsonSchema, maxTokens: opts.maxTokens, mockContext: opts.mockContext });
+    const res = await provider.complete({ agent: opts.agent, system: opts.system, documents: opts.documents, prompt, schema: jsonSchema, maxTokens: opts.maxTokens, images: opts.images, mockContext: opts.mockContext });
     const parsed = opts.schema.safeParse(res.json);
     await db.aiRun.create({
       data: {
@@ -75,7 +75,7 @@ export async function callStructured<T>(
     });
     if (parsed.success) return parsed.data;
     lastIssues = parsed.error.issues.slice(0, 8).map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
-    prompt = `${opts.prompt}\n\n[이전 제출이 스키마 검증에 실패했다] ${lastIssues}\n스키마에 정확히 맞춰 submit_result 로 다시 제출하라.`;
+    prompt = `${opts.prompt}\n\n[이전 제출이 스키마 검증에 실패했다] ${lastIssues}\n스키마에 정확히 맞춰 다시 제출하라.`;
   }
   throw new AiOutputInvalidError(`AI 출력이 형식에 맞지 않습니다(${lastIssues}).`);
 }

@@ -542,6 +542,7 @@ model DeliverableVersion {
   version_no     Int
   storage_key    String?
   external_url   String?
+  original_name  String?
   mime           String?
   size           BigInt?
   sha256         String?

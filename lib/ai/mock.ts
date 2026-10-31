@@ -1,3 +1,4 @@
+import type { A6Output } from "./schemas/a6";
 import type { CompleteRequest, MockHandler } from "./provider";
 import type { A1Summary, DeptCode } from "./schemas/a1";
 import type { A2Output } from "./schemas/a2";
@@ -169,7 +170,30 @@ export function mockA2(ctx: A2MockContext): A2Output {
   return out;
 }
 
+export type A6MockContext = { criteria: string[]; text: string | null; image: boolean };
+
+/** 결정적 A6: 기준 낱말이 추출 텍스트에 있으면 충족, 일부면 부분. 이미지는 '부분'(mock 은 그림을 못 본다) */
+export function mockA6(ctx: A6MockContext): A6Output {
+  const text = (ctx.text ?? "").replace(/\s+/g, "");
+  const criteria = ctx.criteria.map((c) => {
+    const words = c.split(/[·,()\s/]+/).map((w) => w.replace(/(필요시|여부|없음)$/g, "")).filter((w) => w.length >= 2);
+    const hit = words.filter((w) => text.includes(w)).length;
+    const verdict = ctx.image ? "partial" : words.length && hit === words.length ? "met" : hit > 0 ? "partial" : "unmet";
+    return { criterion: c, verdict: verdict as "met" | "partial" | "unmet", evidence: ctx.image ? "mock 평가: 이미지는 내용을 확인하지 않음" : hit ? `작업물에 '${words.filter((w) => text.includes(w)).join("·")}' 언급` : "작업물에서 찾지 못함" };
+  });
+  const pts = criteria.reduce((n, c) => n + (c.verdict === "met" ? 1 : c.verdict === "partial" ? 0.5 : 0), 0);
+  const score = Math.max(1, Math.round((pts / Math.max(1, criteria.length)) * 100));
+  return {
+    criteria,
+    score,
+    missing_items: criteria.filter((c) => c.verdict !== "met").map((c) => c.criterion),
+    suggestions: criteria.filter((c) => c.verdict === "unmet").map((c) => `'${c.criterion}' 항목을 추가하세요.`),
+    summary: `mock 평가: 기준 ${criteria.length}개 중 충족 ${criteria.filter((c) => c.verdict === "met").length}개`,
+  };
+}
+
 export const MOCK_HANDLERS: Record<string, MockHandler> = {
+  a6: (req: CompleteRequest) => mockA6(req.mockContext as A6MockContext),
   a1: (req: CompleteRequest) => mockA1(req.mockContext as A1MockContext),
   a2: (req: CompleteRequest) => mockA2(req.mockContext as A2MockContext),
 };

@@ -14,6 +14,7 @@ import { api } from "@/lib/client-api";
 import type { DepartmentCode } from "@/lib/design/tokens";
 import { cn } from "@/lib/utils";
 import { useOptions } from "./use-options";
+import { DeliverablesTab } from "./deliverables-tab";
 
 type Detail = {
   task: {
@@ -60,11 +61,13 @@ function historyText(h: Detail["history"][number]): string {
   return base;
 }
 
-export function TaskDrawerBody({ id, onTitle }: { id: string; onTitle: (t: string) => void }) {
+type Tab = "overview" | "deliverables" | "references" | "history";
+
+export function TaskDrawerBody({ id, onTitle, initialTab }: { id: string; onTitle: (t: string) => void; initialTab?: string | null }) {
   const router = useRouter();
   const [d, setD] = useState<Detail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"overview" | "deliverables" | "references" | "history">("overview");
+  const [tab, setTab] = useState<Tab>((["overview", "deliverables", "references", "history"] as const).find((x) => x === initialTab) ?? "overview");
   const [editAssign, setEditAssign] = useState(false);
 
   const load = useCallback(async () => {
@@ -155,7 +158,15 @@ export function TaskDrawerBody({ id, onTitle }: { id: string; onTitle: (t: strin
         ))}
       </div>
 
-      {tab === "deliverables" ? <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted">작업물 업로드·버전·AI 평가는 Phase 6에서 제공됩니다.</p> : null}
+      {tab === "deliverables" ? (
+        <DeliverablesTab
+          taskId={id}
+          onChanged={() => {
+            void load();
+            router.refresh();
+          }}
+        />
+      ) : null}
       {tab === "references" ? <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted">레퍼런스·예시안 제작 의뢰는 Phase 7에서 제공됩니다.</p> : null}
 
       {tab === "history" ? (

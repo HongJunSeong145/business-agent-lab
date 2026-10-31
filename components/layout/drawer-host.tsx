@@ -47,6 +47,7 @@ export function DrawerHost() {
   const close = () => {
     const next = new URLSearchParams(params);
     TYPES.forEach((t) => next.delete(t));
+    next.delete("tab");
     const qs = next.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   };
@@ -69,7 +70,7 @@ export function DrawerHost() {
           <Dialog.Description className="sr-only">상세 정보 드로어</Dialog.Description>
           <div className="flex-1 overflow-y-auto px-5 py-4">
             {type === "task" && id ? (
-              <TaskDrawerBody key={id} id={id} onTitle={onTitle} />
+              <TaskDrawerBody key={id} id={id} onTitle={onTitle} initialTab={params.get("tab")} />
             ) : !current ? (
               <div className="space-y-3" aria-busy="true">
                 <div className="h-5 w-2/3 animate-pulse rounded bg-bg" />
