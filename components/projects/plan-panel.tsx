@@ -10,7 +10,7 @@ import { api } from "@/lib/client-api";
 import { cn } from "@/lib/utils";
 
 type Fields = {
-  title: string; datetime: string; venue: string; budget: number | null; host: string; organizer: string; purpose: string; content: string;
+  title: string; event_date: string; datetime: string; venue: string; budget: number | null; host: string; organizer: string; purpose: string; content: string;
   timetable: { time: string; item: string }[]; budget_scenarios: { name: string; amount: number; note: string }[];
 };
 type Version = { id: string; versionNo: number; fields: Fields; note: string | null; author: string | null; at: string; approvedBy: string | null; approvedAt: string | null; file: { name: string; url: string; downloadUrl: string } | null };
@@ -21,6 +21,9 @@ type Data = {
   versions: Version[];
   prefill: Fields;
   permissions: { edit: boolean; approve: boolean };
+  draftTaskId: string | null;
+  aiPlanDrafts: { id: string; at: string; plan: Partial<Fields> & { timetable?: { time: string; item: string }[] } }[];
+  draftRequestRunning: boolean;
 };
 
 const STATUS: Record<string, { label: string; cls: string }> = {
@@ -29,7 +32,7 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   approved: { label: "결재 완료", cls: "border-success text-success" },
   rejected: { label: "반려", cls: "border-danger text-danger" },
 };
-const REQUIRED: [keyof Fields, string][] = [["title", "행사명"], ["datetime", "일시"], ["venue", "장소"], ["budget", "예산액"], ["host", "주최"], ["organizer", "주관"], ["purpose", "배경 및 목적"], ["content", "행사 내용"]];
+const REQUIRED: [keyof Fields, string][] = [["title", "행사명"], ["event_date", "행사 날짜"], ["datetime", "일시"], ["venue", "장소"], ["budget", "예산액"], ["host", "주최"], ["organizer", "주관"], ["purpose", "배경 및 목적"], ["content", "행사 내용"]];
 const missingOf = (f: Fields) => REQUIRED.filter(([k]) => (k === "budget" ? f.budget === null : !f[k])).map(([, l]) => l);
 const time = (s: string) => new Date(s).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
@@ -68,6 +71,14 @@ export function PlanPanel({ projectId }: { projectId: string }) {
       cancelled = true;
     };
   }, [projectId]);
+
+  // AI 레퍼런스 기획안을 만드는 동안 4초마다 상태만 새로 받는다(작성 중인 양식은 그대로)
+  const running = data?.draftRequestRunning ?? false;
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(() => void api<Data>(`/api/projects/${projectId}/plan`).then((d) => setData(d)).catch(() => undefined), 4000);
+    return () => clearInterval(t);
+  }, [running, projectId]);
 
   if (error) return <p role="alert" className="text-sm text-danger">{error}</p>;
   if (!data || !form) return <div className="h-24 animate-pulse rounded-lg bg-bg" aria-busy="true" />;
@@ -133,11 +144,29 @@ export function PlanPanel({ projectId }: { projectId: string }) {
           </Select>
         ) : null}
       </div>
+      <PlanReferences
+        data={data}
+        projectId={projectId}
+        onUse={(d) => {
+          setViewId(null);
+          setForm({
+            ...form,
+            ...Object.fromEntries(Object.entries(d).filter(([, v]) => v !== null && v !== "" && v !== undefined)),
+            timetable: d.timetable?.length ? d.timetable : form.timetable,
+          } as Fields);
+          toast("AI 레퍼런스 기획안을 양식에 채웠습니다. 고친 뒤 '새 버전으로 저장'을 누르세요.");
+        }}
+        onRequested={() => void load()}
+      />
       {viewing ? <p className="rounded-lg bg-bg px-3 py-2 text-sm" role="status">v{viewing.versionNo} 보기 전용{viewing.note ? ` — ${viewing.note}` : ""}</p> : null}
 
       <div className="grid gap-3 sm:grid-cols-2">
         {field("title", "행사명")}
-        {field("datetime", "일시")}
+        <div>
+          <Label htmlFor="plan-event_date">행사 날짜</Label>
+          <Input id="plan-event_date" type="date" value={shown.event_date ?? ""} readOnly={!editable} onChange={(e) => set("event_date", e.target.value)} />
+        </div>
+        {field("datetime", "일시(시간 포함 설명)")}
         {field("venue", "장소")}
         <div>
           <Label htmlFor="plan-budget">예산액(원)</Label>
@@ -243,6 +272,54 @@ export function PlanPanel({ projectId }: { projectId: string }) {
           </>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/** 기획국용 레퍼런스: 참고 사이트 + AI 레퍼런스 기획안(양식으로 가져오기) */
+function PlanReferences({ data, projectId, onUse, onRequested }: { data: Data; projectId: string; onUse: (d: Data["aiPlanDrafts"][number]["plan"]) => void; onRequested: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const latest = data.aiPlanDrafts[0];
+  if (!data.permissions.edit && !latest) return null;
+  return (
+    <div className="space-y-2 rounded-lg border border-dashed border-info px-3 py-2 text-sm" data-testid="plan-references">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-medium">기획안 레퍼런스</span>
+        <span className="text-xs text-muted">회의록을 바탕으로 참고 사이트를 찾고 AI가 레퍼런스 기획안을 만듭니다(1~3분).</span>
+        {data.draftTaskId ? (
+          <a href={`/departments/planning?task=${data.draftTaskId}&tab=references`} className="text-xs underline">기획국 공간에서 참고 사이트·예시 보기</a>
+        ) : null}
+        {data.permissions.edit ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="ml-auto"
+            disabled={busy || data.draftRequestRunning}
+            onClick={async () => {
+              const instruction = window.prompt("AI에게 바라는 점(선택) — 예: 예산 40만 원 이하, 시험 기간 분위기", "") ?? null;
+              if (instruction === null) return;
+              setBusy(true);
+              try {
+                await api(`/api/projects/${projectId}/plan/references`, { body: { instruction } });
+                toast("레퍼런스 기획안을 만드는 중입니다. 끝나면 알려 드립니다.");
+                onRequested();
+              } catch (e) {
+                toast((e as Error).message, { tone: "error" });
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {data.draftRequestRunning ? "AI가 만드는 중…" : "AI 레퍼런스 기획안 받기"}
+          </Button>
+        ) : null}
+      </div>
+      {latest ? (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span>최근 AI 레퍼런스 기획안: <strong>{latest.plan.title || "(제목 없음)"}</strong> · {time(latest.at)}</span>
+          {data.permissions.edit ? <button className="underline" onClick={() => onUse(latest.plan)}>이 예시로 양식 채우기</button> : null}
+        </div>
+      ) : null}
     </div>
   );
 }

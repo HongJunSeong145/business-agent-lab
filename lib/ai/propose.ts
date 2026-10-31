@@ -39,7 +39,7 @@ export function buildProposals(input: {
   params: RuleParams;
   today: string;
 }): Row[] {
-  const { meetingId, a2, existing, members, params, today } = input;
+  const { meetingId, a2, existing, params, today } = input;
   const rows: Row[] = [];
   const projectKeyOf = new Map<string, string>(); // a2 ref/id → project_key
   type ProjShape = { key: string; existingId: string | null; title: string; event_start: string | null; funding: FundingSource[]; usesVendor: boolean; existingTasks: { title: string; template_key: string | null }[] };
@@ -95,11 +95,7 @@ export function buildProposals(input: {
     }
   }
 
-  const resolveAssignees = (hint: string | null) => {
-    if (!hint) return [];
-    const h = hint.replace(/\s/g, "");
-    return members.filter((m) => m.name.length >= 2 && h.includes(m.name.replace(/\s/g, ""))).map((m) => m.id);
-  };
+  // 담당자(사람)는 추천하지 않는다 — 국장이 국서 워크스페이스에서 직접 정한다(사용자 결정 2026-10-31)
 
   // 사업별 업무 (AI 업무 + 표준 템플릿)
   const tasksByProject = new Map<string | null, A2Output["tasks"]>();
@@ -124,7 +120,7 @@ export function buildProposals(input: {
       target_id: shape?.existingId ?? null,
       payload: {
         title: t.title, description: t.description, lead_department: t.lead, support_departments: t.support.filter((s) => s !== t.lead),
-        template_key: t.template_key, assignee_hint: t.assignee_hint, assignee_ids: resolveAssignees(t.assignee_hint),
+        template_key: t.template_key, assignee_ids: [],
         due_date: t.due, due_reason: t.due_reason, due_feasible: t.due_feasible, acceptance_criteria: criteria,
         project_id: shape?.existingId ?? null, project_title: shape?.title ?? null,
       } as Prisma.InputJsonValue,

@@ -526,6 +526,8 @@ model Deliverable {
   task_id            String    @db.Uuid
   title              String
   current_version_id String?   @db.Uuid
+  /// 사용자가 '최종본'으로 지정한 버전(작업물 보관함에 표시)
+  final_version_id   String?   @db.Uuid
   deleted_at         DateTime? @db.Timestamptz(6)
   created_at         DateTime  @default(now()) @db.Timestamptz(6)
   updated_at         DateTime  @updatedAt @db.Timestamptz(6)

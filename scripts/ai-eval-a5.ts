@@ -63,7 +63,7 @@ try {
   const byKey = (k: string) => tasks.find((t) => t.template_key === k)!;
   await savePlanVersion(prisma, new MemoryStorage(), planner, p.id, {
     fields: {
-      title: "기말고사 응원 간식 나눔", datetime: "2026-12-09(수) 12:00 ~ 소진 시", venue: "데모관 1층 로비", budget: 400000, host: "제9대 데모단과대학 학생회", organizer: "기획국·집행국",
+      title: "기말고사 응원 간식 나눔", event_date: "2026-12-09", datetime: "2026-12-09(수) 12:00 ~ 소진 시", venue: "데모관 1층 로비", budget: 400000, host: "제9대 데모단과대학 학생회", organizer: "기획국·집행국",
       purpose: "기말고사 기간 학우들의 학업 스트레스를 덜고 학생회 활동을 알린다.", content: "학생증 확인 후 간식 꾸러미 1인 1개 배부(선착순 80명), 수혜자 명단 작성",
       timetable: [{ time: "11:30", item: "부스 설치" }, { time: "12:00", item: "배부 시작" }], budget_scenarios: [],
     },

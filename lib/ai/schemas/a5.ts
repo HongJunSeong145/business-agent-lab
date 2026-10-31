@@ -27,6 +27,21 @@ export const a5Schema = z.object({
     )
     .min(1)
     .max(4),
+  /** 기획국 업무일 때만: 기획안 양식에 바로 옮길 수 있는 레퍼런스 기획안(다른 국서는 null) */
+  plan_draft: z
+    .object({
+      title: z.string().max(150),
+      event_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+      datetime: z.string().max(200),
+      venue: z.string().max(200),
+      budget: z.number().int().min(0).nullable(),
+      host: z.string().max(150),
+      organizer: z.string().max(150),
+      purpose: z.string().max(3000),
+      content: z.string().max(8000),
+      timetable: z.array(z.object({ time: z.string().max(50), item: z.string().max(300) })).max(40),
+    })
+    .nullable(),
   notes: z.string().max(600),
 });
 export type A5Output = z.infer<typeof a5Schema>;

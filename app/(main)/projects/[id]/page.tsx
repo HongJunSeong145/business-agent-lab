@@ -19,6 +19,8 @@ import { ProjectProgressBar } from "@/components/projects/project-progress-bar";
 import { TaskFormDialog } from "@/components/tasks/task-form-dialog";
 import { SchedulePanel } from "@/components/projects/schedule-panel";
 import { PlanPanel } from "@/components/projects/plan-panel";
+import { EventDateSetter } from "@/components/projects/event-date-setter";
+import { ArchivePanel } from "@/components/projects/archive-panel";
 import { getProjectSchedule } from "@/lib/services/schedule";
 import { loadRuleParams } from "@/lib/rule-params";
 import { PROMO_TIER_LABEL, withTax, type PromoTier } from "@kgb/rules";
@@ -80,6 +82,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           </div>
         ) : null}
       </div>
+
+      {!p.event_start && p.status !== "cancelled" ? <EventDateSetter projectId={p.id} canEdit={canEdit} /> : null}
 
       {p.status === "cancelled" ? (
         <p className="rounded-lg border border-border bg-bg px-3 py-2 text-sm" role="status">취소된 사업입니다. 미완료 업무는 취소되었고 완료 업무·증빙·기록은 보존됩니다.</p>
@@ -202,6 +206,14 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           </ul>
         </Card>
       </div>
+
+      <Card id="archive" className="scroll-mt-20">
+        <CardTitle className="mb-1">작업물 보관함</CardTitle>
+        <p className="mb-3 text-xs text-muted">
+          {p.status === "done" ? "완료된 사업입니다. 국서별 최종 결과물이 보관되어 있습니다." : "재정국을 뺀 모든 업무가 100%가 되면 사업이 '완료'로 바뀌고, 이곳에 국서별 결과물이 보관됩니다."}
+        </p>
+        <ArchivePanel projectId={id} />
+      </Card>
 
       <Card id="finance" className="scroll-mt-20">
         <CardTitle className="mb-3">재정 — 구입·증빙</CardTitle>

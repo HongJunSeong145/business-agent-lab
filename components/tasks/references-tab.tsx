@@ -13,14 +13,16 @@ import { DELIVERABLE_ACCEPT } from "./deliverables-tab";
 type Item = {
   id: string; kind: "link" | "file" | "ai_example"; origin: "user" | "ai_search" | "ai_generated"; title: string; url: string | null;
   summary: string | null; relevance: string | null; points: string[]; content: string | null; format: "markdown" | "html" | "svg" | null;
-  needsReview: boolean; requestId: string | null; fileName: string | null; preview: string | null; fileUrl: string | null; downloadUrl: string | null;
+  needsReview: boolean; requestId: string | null; outdated: boolean; fileName: string | null; preview: string | null; fileUrl: string | null; downloadUrl: string | null;
   by: string | null; at: string; canDelete: boolean;
 };
 type Req = {
   id: string; status: "queued" | "running" | "done" | "failed"; instruction: string | null; by: string | null; at: string; error: string | null;
+  outdated: boolean; options: { useMinutes?: boolean; usePlan?: boolean; usePastWork?: boolean };
   snapshot: { meeting?: { title: string; analysisVersion: number } | null; plan?: { versionNo: number; isDraft: boolean } | null; pastWork?: { title: string }[]; searchFailed?: boolean; searchNote?: string; notes?: string } | null;
 };
 type Data = {
+  approvedPlan: { versionNo: number } | null;
   canAdd: boolean; aiAvailable: boolean;
   context: { meeting: { title: string; analysisVersion: number } | null; plan: { versionNo: number; isDraft: boolean } | null };
   requests: Req[]; items: Item[];
@@ -95,6 +97,27 @@ export function ReferencesTab({ taskId, onChanged }: { taskId: string; onChanged
               </p>
               {r.snapshot?.searchNote ? <p className={cn("text-xs", r.snapshot.searchFailed ? "text-warning-text" : "text-muted")}>{r.snapshot.searchNote}</p> : null}
               {r.error ? <p className="text-xs text-danger">{r.error}</p> : null}
+              {r.outdated && data.approvedPlan ? (
+                <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-warning-text" data-testid="reference-outdated">
+                  결재 기획안 v{data.approvedPlan.versionNo} 이전 자료로 만든 결과입니다.
+                  {data.canAdd && data.aiAvailable && !pending ? (
+                    <button
+                      className="rounded border border-warning px-1.5 py-0.5 underline"
+                      onClick={async () => {
+                        try {
+                          await api(`/api/tasks/${taskId}/references/request`, { body: { instruction: r.instruction ?? "", useMinutes: r.options.useMinutes ?? true, usePlan: true, usePastWork: r.options.usePastWork ?? false } });
+                          toast("결재 기획안 기준으로 다시 만드는 중입니다.");
+                          await after();
+                        } catch (e) {
+                          toast((e as Error).message, { tone: "error" });
+                        }
+                      }}
+                    >
+                      결재본으로 다시 만들기
+                    </button>
+                  ) : null}
+                </p>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -195,6 +218,7 @@ function Example({ i, onChanged }: { i: Item; onChanged: () => Promise<void> }) 
       <div className="flex flex-wrap items-center gap-2">
         <span className="inline-flex items-center gap-1 rounded border border-info px-1.5 py-0.5 text-xs text-info"><Sparkles className="h-3 w-3" />AI 예시안 — 벤치마킹용</span>
         {i.needsReview ? <span className="rounded border border-warning px-1.5 py-0.5 text-xs text-warning-text">발송 전 검토 필요</span> : null}
+        {i.outdated ? <span className="rounded border border-dashed border-warning px-1.5 py-0.5 text-xs text-warning-text">결재 전 기준</span> : null}
         <h4 className="font-medium">{i.title}</h4>
         <span className="text-xs text-muted">{i.summary}</span>
         <span className="ml-auto flex items-center gap-2">

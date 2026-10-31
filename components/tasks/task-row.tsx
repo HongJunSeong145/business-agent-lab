@@ -12,6 +12,7 @@ import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/client-api";
 import type { TaskRowData } from "@/lib/task-rows";
 import { postDeliverable } from "./deliverables-tab";
+import { BulkSelect } from "./bulk";
 import type { DepartmentCode } from "@/lib/design/tokens";
 import { cn, dDayLabel } from "@/lib/utils";
 
@@ -89,6 +90,8 @@ export function TaskRow({ task, today, deptCode }: { task: TaskRowData; today: s
         (blocked || cancelled) && "opacity-60",
       )}
     >
+      <span className="flex items-center gap-1.5">
+      <BulkSelect id={task.id} title={task.title} />
       <input
         type="checkbox"
         aria-label={`${task.title} 완료`}
@@ -98,6 +101,7 @@ export function TaskRow({ task, today, deptCode }: { task: TaskRowData; today: s
         title={!task.can.complete ? "담당자·국장 이상만 완료 체크할 수 있습니다" : blocked ? "선행 업무 대기 중" : undefined}
         onChange={(e) => void toggleComplete(e.target.checked)}
       />
+      </span>
       <div className="min-w-0">
         <Link href={drawerHref} scroll={false} className={cn("block truncate text-sm font-medium hover:underline", (completed || cancelled) && "text-muted line-through")}>
           {task.title}

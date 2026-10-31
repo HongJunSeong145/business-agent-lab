@@ -47,7 +47,7 @@ test("T12·T13: 국원이 이미지 업로드 → 미리보기·AI 평가 → 2�
   await form.getByRole("button", { name: "올리기" }).click();
   await expect(page.getByText(/v1 업로드 완료/)).toBeVisible();
   const card = tab.getByTestId("deliverable");
-  await expect(card.getByRole("heading", { name: "포스터" })).toBeVisible();
+  await expect(card.getByLabel("작업물 이름: 포스터")).toHaveValue("포스터");
   await expect(card.getByRole("img", { name: /미리보기/ })).toBeVisible();
   await expect(card.getByTestId("eval-score")).toBeVisible({ timeout: 30_000 });
   await expect(card.getByTestId("evaluation")).toContainText("부분"); // mock 은 이미지를 '부분'으로 판정

@@ -137,6 +137,13 @@ export async function runReferenceJob(db: Db, provider: AiProvider, aiJobId: str
           },
         });
       }
+      if (out.plan_draft) {
+        const d = out.plan_draft;
+        const md = [`# ${d.title || "레퍼런스 기획안"}`, `- 행사 날짜: ${d.event_date ?? "[ ]"}`, `- 일시: ${d.datetime || "[ ]"}`, `- 장소: ${d.venue || "[ ]"}`, `- 예산: ${d.budget === null ? "[ ]" : `${d.budget.toLocaleString()}원`}`, `- 주최: ${d.host || "[ ]"} / 주관: ${d.organizer || "[ ]"}`, "", "## 배경 및 목적", d.purpose, "", "## 행사 내용", d.content, "", "## 타임테이블", ...d.timetable.map((t) => `- ${t.time} ${t.item}`)].join("\n");
+        await tx.referenceItem.create({
+          data: { task_id: task.id, project_id: task.project_id, department_id: lead.id, kind: "ai_example", title: "AI 레퍼런스 기획안(양식으로 가져오기 가능)", summary: "기획안 초안", content: md, content_format: "markdown", points: { plan: d } as object, origin: "ai_generated", request_id: requestId },
+        });
+      }
       await tx.referenceRequest.update({
         where: { id: requestId },
         data: {

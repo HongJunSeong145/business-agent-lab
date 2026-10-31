@@ -6,6 +6,7 @@ import { getNumberSetting } from "@/lib/settings";
 import { setAiProgress } from "@/lib/services/tasks";
 import { evaluability } from "@/lib/services/deliverables";
 import { isImageMime } from "@/lib/files/deliverable";
+import { planForContext, planToText } from "@/lib/services/plans";
 import { AiTransientError, AiUnavailableError, type AiProvider, type CompleteRequest } from "./provider";
 import { AiBudgetExceededError, AiOutputInvalidError, callStructured } from "./structured";
 import { a6Schema, normalizeScore } from "./schemas/a6";
@@ -62,6 +63,9 @@ export async function runEvaluateJob(db: Db, storage: Storage, provider: AiProvi
       const text = maskText(v.extracted_text!);
       documents = [{ name: v.original_name ?? "작업물", content: text.length > MAX_DOC_CHARS ? `${text.slice(0, MAX_DOC_CHARS)}\n…(이하 생략)` : text }];
     }
+    // 가장 중요한 기준은 결재된 최종 기획안(없으면 최신 초안, 초안이라고 표시)
+    const plan = task.project_id ? await planForContext(db, task.project_id) : null;
+    if (plan) documents = [...(documents ?? []), { name: `기획안 v${plan.versionNo}${plan.isDraft ? " (초안 — 결재 전)" : " (결재본)"}`, content: maskText(planToText(plan.fields)) }];
     const criteria = criteriaFor(task, lead.code);
     const prev = await db.progressEvaluation.findFirst({ where: { task_id: task.id, deliverable_version_id: { not: v.id } }, orderBy: { created_at: "desc" }, include: { deliverable_version: { select: { version_no: true } } } });
     const out = await callStructured(db, provider, {
@@ -83,6 +87,7 @@ export async function runEvaluateJob(db: Db, storage: Storage, provider: AiProvi
           ? { title: task.project.title, event_start: task.project.event_start ? dateColumnToString(task.project.event_start) : null, venue: task.project.venue, funding: task.project.funding_sources.map((f) => (f.source === "school" ? "교비" : "학생회비")) }
           : null,
         deliverable: { title: v.deliverable.title, version_no: v.version_no, file_name: v.original_name, note: v.note, kind: images ? "image" : "text" },
+        plan: plan ? { versionNo: plan.versionNo, isDraft: plan.isDraft } : null,
         previous: prev ? { version_no: prev.deliverable_version.version_no, score: prev.score, missing_items: (prev.missing_items as string[] | null) ?? [] } : null,
       }),
       mockContext: { criteria: criteria.list, text: v.extracted_text, image: !!images },

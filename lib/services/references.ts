@@ -199,7 +199,13 @@ export async function listReferences(db: Db, actor: ActorT, taskId: string, avai
   const users = await db.user.findMany({ where: { id: { in: userIds } }, select: { id: true, display_name: true } });
   const name = (id: string | null) => users.find((u) => u.id === id)?.display_name ?? null;
   const res = taskResource(task);
+  // 결재 기획안이 생긴 뒤에는, 결재본이 아닌 자료(회의록·초안·이전 결재본)로 만든 AI 결과에 '다시 만들기' 표시
+  const approvedVersionId = plan && !plan.isDraft ? plan.versionId : null;
+  const outdatedReq = new Set(
+    requests.filter((r) => r.status === "done" && approvedVersionId && (r.context_snapshot as { plan?: { versionId?: string } | null } | null)?.plan?.versionId !== approvedVersionId).map((r) => r.id),
+  );
   return {
+    approvedPlan: approvedVersionId ? { versionNo: plan!.versionNo } : null,
     canAdd: can(actor, { type: "reference.add", task: res }) && task.status !== "cancelled",
     aiAvailable: available,
     context: { meeting: meeting ? { title: meeting.title, analysisVersion: meeting.analysisVersion } : null, plan: plan ? { versionNo: plan.versionNo, isDraft: plan.isDraft } : null },
@@ -207,6 +213,8 @@ export async function listReferences(db: Db, actor: ActorT, taskId: string, avai
       id: r.id,
       status: r.status as "queued" | "running" | "done" | "failed",
       instruction: r.instruction,
+      outdated: outdatedReq.has(r.id),
+      options: ((r.context_snapshot as { options?: Record<string, boolean> } | null)?.options ?? {}) as { useMinutes?: boolean; usePlan?: boolean; usePastWork?: boolean },
       by: name(r.requested_by),
       at: r.created_at,
       error: r.error,
@@ -227,11 +235,13 @@ export async function listReferences(db: Db, actor: ActorT, taskId: string, avai
       url: i.url,
       summary: i.summary,
       relevance: i.relevance_note,
-      points: (i.points as string[] | null) ?? [],
+      points: Array.isArray(i.points) ? (i.points as string[]) : [],
+      planDraft: i.points && !Array.isArray(i.points) ? ((i.points as { plan?: unknown }).plan ?? null) : null,
       content: i.content,
       format: i.content_format as "markdown" | "html" | "svg" | null,
       needsReview: i.needs_review_before_send,
       requestId: i.request_id,
+      outdated: !!i.request_id && outdatedReq.has(i.request_id),
       fileName: i.original_name,
       preview: i.storage_key ? previewKind(i.mime) : null,
       fileUrl: i.storage_key ? signedFileUrl(i.storage_key) : null,

@@ -121,6 +121,34 @@ async function assertNoCycle(tx: Tx, termId: string, taskId: string, dependsOn: 
 
 const PLAN_TEMPLATE_KEYS = new Set(["PLN_DRAFT", "PLN_APPROVAL"]);
 
+/**
+ * 사업 자동 완료 (사용자 결정 2026-10-31): 재정국이 주관하는 업무를 뺀 모든 업무(취소 제외)의 진척도가 100%면
+ * 사업을 '완료'로 옮겨 완료된 사업(작업물 보관함)에 둔다. 다시 100% 미만이 되면 '진행 중'으로 되돌린다.
+ */
+export async function syncProjectCompletion(tx: Tx, termId: string, projectId: string | null | undefined) {
+  if (!projectId) return null;
+  const p = await tx.project.findFirst({ where: { id: projectId, term_id: termId, deleted_at: null } });
+  if (!p || p.status === "cancelled" || p.status === "postponed") return null;
+  const tasks = await tx.task.findMany({
+    where: { project_id: p.id, deleted_at: null, status: { not: "cancelled" }, departments: { some: { role: "lead", department: { code: { not: "finance" } } } } },
+    select: { is_completed: true, manual_progress: true, ai_progress: true },
+  });
+  const allDone = tasks.length > 0 && tasks.every((t) => effectiveProgress(t) >= 100);
+  if (allDone && p.status !== "done") {
+    await tx.project.update({ where: { id: p.id }, data: { status: "done" } });
+    await writeAudit(tx, { actorId: null, actorKind: "system", action: "project.status", entityType: "project", entityId: p.id, diff: { before: p.status, after: "done", reason: "재정국 외 모든 업무 100%" } });
+    const { notifyLeaders } = await import("./notifications");
+    await notifyLeaders(tx, termId, { type: "project_done", title: `사업 완료: ${p.title}`, body: "재정국을 뺀 모든 국서 업무가 100%입니다. 작업물은 완료된 사업의 작업물 보관함에서 볼 수 있습니다.", link: `/projects/${p.id}#archive`, dedupeKey: `project-done:${p.id}:${Date.now()}` });
+    return "done" as const;
+  }
+  if (!allDone && p.status === "done") {
+    await tx.project.update({ where: { id: p.id }, data: { status: "in_progress" } });
+    await writeAudit(tx, { actorId: null, actorKind: "system", action: "project.status", entityType: "project", entityId: p.id, diff: { before: "done", after: "in_progress", reason: "100% 미만 업무 생김" } });
+    return "reopened" as const;
+  }
+  return null;
+}
+
 /** 기획안 초안이 저장된 사업 (기획안 업무를 선행으로 둔 업무의 '초안 있음' 판단 — D7) */
 export async function projectsWithPlanDraft(db: Db | Tx, projectIds: (string | null)[]): Promise<Set<string>> {
   const ids = [...new Set(projectIds.filter(Boolean) as string[])];
@@ -221,6 +249,7 @@ export async function insertTaskTx(tx: Tx, actor: ActorT, v: ParsedTask, extra: 
   }
   await writeAudit(tx, { actorId: actor.userId, action: "task.create", entityType: "task", entityId: task.id, diff: { after: v, ...extra } });
   await recomputeReadiness(tx, actor.termId, { taskIds: [task.id] });
+  await syncProjectCompletion(tx, actor.termId, task.project_id);
   return task;
 }
 
@@ -313,6 +342,7 @@ export async function updateTask(db: Db, actor: ActorT, id: string, raw: unknown
     if (t.project_id && (v.due_date !== undefined || v.due_state !== undefined || v.status !== undefined)) {
       await recalcProjectSchedule(tx, actor.termId, t.project_id, "proposed");
     }
+    if (v.status !== undefined) await syncProjectCompletion(tx, actor.termId, t.project_id);
     return tx.task.findUniqueOrThrow({ where: { id } });
   });
 }
@@ -339,6 +369,7 @@ export async function setManualProgress(db: Db, actor: ActorT, id: string, raw: 
     });
     await writeAudit(tx, { actorId: actor.userId, action: "task.progress_manual", entityType: "task", entityId: id, diff: { before: t.manual_progress, after: value } });
     await recomputeReadiness(tx, actor.termId, { dependentsOf: [id] });
+    await syncProjectCompletion(tx, actor.termId, t.project_id);
     return tx.task.findUniqueOrThrow({ where: { id } });
   });
 }
@@ -356,6 +387,7 @@ export async function setAiProgress(db: Db, termId: string, id: string, value: n
     await tx.progressHistory.create({ data: { task_id: id, field: "ai", old_value: t.ai_progress?.toString() ?? null, new_value: String(value), actor: "ai", evaluation_id: evaluationId } });
     await writeAudit(tx, { actorId: null, actorKind: "ai", action: "task.progress_ai", entityType: "task", entityId: id, diff: { before: t.ai_progress, after: value } });
     await recomputeReadiness(tx, termId, { dependentsOf: [id] });
+    await syncProjectCompletion(tx, termId, t.project_id);
   });
 }
 
@@ -389,6 +421,7 @@ export async function setCompleted(db: Db, actor: ActorT, id: string, completed:
     await writeAudit(tx, { actorId: actor.userId, action: completed ? "task.complete" : "task.uncomplete", entityType: "task", entityId: id });
     await recomputeReadiness(tx, actor.termId, { taskIds: completed ? [] : [id], dependentsOf: [id] });
     if (t.project_id && t.template_key) await recalcProjectSchedule(tx, actor.termId, t.project_id, "proposed");
+    await syncProjectCompletion(tx, actor.termId, t.project_id);
     return tx.task.findUniqueOrThrow({ where: { id } });
   });
 }
@@ -433,6 +466,7 @@ export async function deleteTask(db: Db, actor: ActorT, id: string) {
     await tx.taskDependency.deleteMany({ where: { OR: [{ task_id: id }, { depends_on_task_id: id }] } });
     await writeAudit(tx, { actorId: actor.userId, action: "task.delete", entityType: "task", entityId: id });
     await recomputeReadiness(tx, actor.termId, { taskIds: dependents.map((d) => d.task_id) });
+    await syncProjectCompletion(tx, actor.termId, (await tx.task.findUnique({ where: { id }, select: { project_id: true } }))?.project_id);
   });
 }
 
@@ -481,4 +515,62 @@ export async function getTaskDetail(db: Db, actor: ActorT, id: string) {
       leader: isLeader(actor),
     },
   };
+}
+
+const bulkSchema = z.object({
+  ids: z.array(uuid).min(1, "업무를 고르세요.").max(200),
+  action: z.enum(["due", "shift", "assign", "complete", "uncomplete", "cancel", "reopen", "delete"]),
+  due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  days: z.coerce.number().int().min(-365).max(365).optional(),
+  assignee_ids: z.array(uuid).max(20).optional(),
+});
+
+/**
+ * 일괄 수정 (사용자 결정 2026-10-31): 국서 공간에서 여러 업무를 골라 마감 지정·이동, 담당자 지정, 완료·해제, 취소·되살리기, 삭제.
+ * 업무마다 기존 단건 기능을 그대로 써서 권한·이력·자동 계산(차단·마감·사업 완료)이 똑같이 적용된다.
+ */
+export async function bulkUpdateTasks(db: Db, actor: ActorT, raw: unknown) {
+  const v = parse(bulkSchema, raw);
+  const results: { id: string; ok: boolean; error?: string }[] = [];
+  // '며칠 옮기기'는 처음 날짜 기준으로 한꺼번에 계산(앞 업무를 옮기며 뒤 업무의 제안 마감이 다시 계산돼도 두 번 옮기지 않게)
+  const shiftTargets = new Map<string, string | null>();
+  if (v.action === "shift") {
+    const rows = await db.task.findMany({ where: { id: { in: v.ids }, ...termTaskWhere(actor.termId) }, select: { id: true, due_date: true } });
+    for (const r of rows) shiftTargets.set(r.id, r.due_date && v.days ? new Date(r.due_date.getTime() + v.days * 86400_000).toISOString().slice(0, 10) : null);
+  }
+  for (const id of [...new Set(v.ids)]) {
+    try {
+      switch (v.action) {
+        case "due":
+          if (!v.due_date) throw new ServiceError("날짜를 고르세요.");
+          await updateTask(db, actor, id, { due_date: v.due_date });
+          break;
+        case "shift": {
+          if (!v.days) throw new ServiceError("며칠 옮길지 입력하세요.");
+          const d = shiftTargets.get(id);
+          if (!d) throw new ServiceError("마감이 없는 업무입니다.");
+          await updateTask(db, actor, id, { due_date: d });
+          break;
+        }
+        case "assign":
+          await updateTask(db, actor, id, { assignee_ids: v.assignee_ids ?? [] });
+          break;
+        case "complete":
+        case "uncomplete":
+          await setCompleted(db, actor, id, v.action === "complete");
+          break;
+        case "cancel":
+        case "reopen":
+          await updateTask(db, actor, id, { status: v.action === "cancel" ? "cancelled" : "todo" });
+          break;
+        case "delete":
+          await deleteTask(db, actor, id);
+          break;
+      }
+      results.push({ id, ok: true });
+    } catch (e) {
+      results.push({ id, ok: false, error: e instanceof ServiceError ? e.message : e instanceof Error && e.name === "ForbiddenError" ? "권한이 없습니다." : "처리하지 못했습니다." });
+    }
+  }
+  return { done: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok) };
 }

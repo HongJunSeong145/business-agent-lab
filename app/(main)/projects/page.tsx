@@ -39,6 +39,10 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         <h1 className="text-xl font-semibold">사업</h1>
         {can(user, { type: "project.create" }) ? <ProjectFormDialog trigger={<Button><Plus className="h-4 w-4" /> 사업 만들기</Button>} /> : null}
       </div>
+      <nav aria-label="사업 구분" className="flex gap-1 text-sm">
+        <Link href="/projects" className={`rounded-lg border px-3 py-1.5 ${sp.status !== "done" ? "border-text font-semibold" : "border-border text-muted"}`}>전체</Link>
+        <Link href="/projects?status=done" className={`rounded-lg border px-3 py-1.5 ${sp.status === "done" ? "border-text font-semibold" : "border-border text-muted"}`}>완료된 사업(작업물 보관)</Link>
+      </nav>
       <form method="get" className="flex flex-wrap gap-2" aria-label="사업 필터">
         <Select name="status" defaultValue={sp.status ?? ""} className="w-36" aria-label="상태">
           <option value="">모든 상태</option>
