@@ -12,7 +12,7 @@ import { dateColumnToString, formatKoreanDate, cn } from "@/lib/utils";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/common/badges";
-import { ComingSoon } from "@/components/common/empty-state";
+import { PartnersPanel, ProjectFinancePanel } from "@/components/finance/project-finance";
 import { ProjectFormDialog } from "@/components/projects/project-form-dialog";
 import { ProjectActions } from "@/components/projects/project-actions";
 import { ProjectProgressBar } from "@/components/projects/project-progress-bar";
@@ -203,10 +203,15 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         </Card>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <ComingSoon phase={9} label="재정(예산·구입·증빙)" />
-        <ComingSoon phase={9} label="제휴 진행표" />
-      </div>
+      <Card id="finance" className="scroll-mt-20">
+        <CardTitle className="mb-3">재정 — 구입·증빙</CardTitle>
+        <ProjectFinancePanel projectId={id} />
+      </Card>
+
+      <Card id="partners" className="scroll-mt-20">
+        <CardTitle className="mb-3">제휴 진행표</CardTitle>
+        <PartnersPanel projectId={id} />
+      </Card>
     </div>
   );
 }

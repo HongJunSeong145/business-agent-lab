@@ -238,6 +238,10 @@ export const MOCK_SEARCH_HANDLERS: Record<string, MockSearchHandler> = { a5_sear
 export const MOCK_HANDLERS: Record<string, MockHandler> = {
   a5: (req: CompleteRequest) => mockA5(req.mockContext as A5MockContext),
   a6: (req: CompleteRequest) => mockA6(req.mockContext as A6MockContext),
+  a7: (req: CompleteRequest) => {
+    const s = (req.mockContext as { summary: { overdue: number; critical: number; evidence: number } }).summary;
+    return { summary: `mock 노티스: 초과 ${s.overdue}건, 긴급 ${s.critical}건, 증빙 누락 ${s.evidence}건을 먼저 챙기세요.`, top_actions: ["초과 업무 담당자 확인"] };
+  },
   a1: (req: CompleteRequest) => mockA1(req.mockContext as A1MockContext),
   a2: (req: CompleteRequest) => mockA2(req.mockContext as A2MockContext),
 };

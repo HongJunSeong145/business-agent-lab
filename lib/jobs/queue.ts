@@ -10,6 +10,7 @@ export const QUEUES = {
   propose: "meeting-propose",
   evaluate: "deliverable-evaluate",
   reference: "reference-make",
+  monitor: "monitor-daily",
 } as const;
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 

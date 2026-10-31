@@ -34,6 +34,7 @@ export function MainNav() {
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
+      {item("/finance", "재정")}
     </nav>
   );
 }
