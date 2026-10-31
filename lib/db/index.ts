@@ -9,7 +9,21 @@ function createClient(): PrismaClient {
   return new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 }
 
-export const prisma: PrismaClient = globalForPrisma.prisma ?? createClient();
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+function getClient(): PrismaClient {
+  if (!globalForPrisma.prisma) globalForPrisma.prisma = createClient();
+  return globalForPrisma.prisma;
+}
+
+/**
+ * 지연 생성 Prisma 클라이언트: 실제로 쿼리할 때 연결을 만든다.
+ * (빌드 단계에서는 DATABASE_URL 이 없어도 빌드가 실패하지 않도록)
+ */
+export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
+  get(_target, prop) {
+    const client = getClient();
+    const value = Reflect.get(client, prop, client) as unknown;
+    return typeof value === "function" ? (value as (...a: unknown[]) => unknown).bind(client) : value;
+  },
+});
 
 export type Db = PrismaClient;
