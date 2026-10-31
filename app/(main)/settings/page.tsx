@@ -2,7 +2,8 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth/session";
 import { can } from "@/lib/auth/can";
 import { Card, CardTitle } from "@/components/ui/card";
-import { ComingSoon } from "@/components/common/empty-state";
+import { prisma } from "@/lib/db";
+import { AI_DAILY_BUDGET_CAP_KRW, spentTodayKrw } from "@/lib/ai/structured";
 
 export default async function SettingsPage() {
   const user = await requireUser();
@@ -24,10 +25,11 @@ export default async function SettingsPage() {
           <CardTitle>학생회 운영</CardTitle>
           <Link href="/settings/term" className="block text-sm underline">기수·분기 설정 (학사일정으로 분기 자동 계산, 배너 문구)</Link>
           <Link href="/settings/rules" className="block text-sm underline">규칙 파라미터·휴일</Link>
-          <div className="flex flex-wrap gap-2">
-            <ComingSoon phase={8} label="배너 사진" />
-            <ComingSoon phase={5} label="AI 사용량" />
-          </div>
+          <Link href="/" className="block text-sm underline">배너 사진·문구 (대시보드 배너의 「배너 편집」)</Link>
+          <p className="text-sm" data-testid="ai-usage">
+            오늘 AI 사용액 <strong className="tabular">{Math.round(await spentTodayKrw(prisma)).toLocaleString()}원</strong> / 하루 상한 <span className="tabular">{AI_DAILY_BUDGET_CAP_KRW.toLocaleString()}원</span>
+            <span className="block text-xs text-muted">상한을 넘으면 AI 작업은 다음 날까지 대기하고, 수동 기능은 그대로 쓸 수 있습니다.</span>
+          </p>
         </Card>
       ) : null}
     </div>

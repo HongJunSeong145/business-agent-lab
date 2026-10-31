@@ -94,3 +94,13 @@ export function previewKind(mime: string | null | undefined): "image" | "pdf" | 
   if (isVideoMime(mime)) return "video";
   return "text";
 }
+
+/** 저장된 이미지의 형식을 바이트로 판별 (배너처럼 형식 열이 없는 이미지용) */
+export function sniffImageMime(b: Uint8Array | null): string {
+  if (!b) return "application/octet-stream";
+  if (starts(b, [0x89, 0x50, 0x4e, 0x47])) return "image/png";
+  if (starts(b, [0xff, 0xd8, 0xff])) return "image/jpeg";
+  if (ascii(b, 0, 4) === "GIF8") return "image/gif";
+  if (ascii(b, 0, 4) === "RIFF" && ascii(b, 8, 12) === "WEBP") return "image/webp";
+  return "application/octet-stream";
+}

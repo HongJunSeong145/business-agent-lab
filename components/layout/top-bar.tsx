@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Bell, Search, Upload } from "lucide-react";
+import { Upload } from "lucide-react";
+import { GlobalSearch, NotificationBell } from "./search-bell";
 import { getPermissionSettings } from "@/lib/settings";
 import { UploadMinutesDialog } from "@/components/minutes/upload-dialog";
 import { prisma } from "@/lib/db";
@@ -27,15 +28,7 @@ export async function TopBar({ user }: { user: SessionUser }) {
 
         <MainNav />
 
-        <div className="relative ml-2 hidden max-w-sm flex-1 lg:block">
-          <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted" />
-          <input
-            disabled
-            placeholder="사업·업무·회의록 검색 (Phase 8 예정)"
-            className="h-9 w-full cursor-not-allowed rounded-lg border border-border bg-bg pr-3 pl-9 text-sm placeholder:text-muted"
-            aria-label="전역 검색 (Phase 8 예정)"
-          />
-        </div>
+        <GlobalSearch />
 
         <div className="ml-auto flex items-center gap-1.5">
           {!aiAvailable() ? (
@@ -58,12 +51,7 @@ export async function TopBar({ user }: { user: SessionUser }) {
               }
             />
           ) : null}
-          <span className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg" aria-label={`읽지 않은 알림 ${unread}건`} title="알림 목록은 Phase 8에서 제공됩니다">
-            <Bell className="h-5 w-5" />
-            {unread > 0 ? (
-              <span className="tabular absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-danger px-1 text-center text-[10px] font-semibold text-white">{unread}</span>
-            ) : null}
-          </span>
+          <NotificationBell unread={unread} />
           <UserMenu name={user.displayName} subtitle={subtitle} canManageMembers={can(user, { type: "members.manage" })} />
         </div>
       </div>
