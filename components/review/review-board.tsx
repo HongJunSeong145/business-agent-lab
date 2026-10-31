@@ -27,12 +27,15 @@ const fmt = (v: unknown) =>
     : v === true ? "이용" : v === false ? "없음" : v === null || v === undefined ? "없음" : DEPT_KO[String(v)] ?? String(v);
 
 /** AI 제안 검토 (8-4): 항목별 체크·수정 → 선택 승인 / 모두 거절 */
+type Manual = { tmp: string; projectKey: string | null; title: string; dept: DepartmentCode; due: string | null };
+
 export function ReviewBoard({ groups }: { groups: ReviewGroup[] }) {
   const router = useRouter();
   const all = useMemo(() => groups.flatMap((g) => [...g.projects.flatMap((p) => p.items), ...g.others]), [groups]);
   // D8: 추론 항목은 기본 체크 해제
   const [checked, setChecked] = useState<Set<string>>(() => new Set(all.filter((i) => !i.inferred).map((i) => i.id)));
   const [edits, setEdits] = useState<Record<string, Edit>>({});
+  const [manual, setManual] = useState<Manual[]>([]);
   const [pending, setPending] = useState(false);
   const [rejectAll, setRejectAll] = useState(false);
 
@@ -43,17 +46,20 @@ export function ReviewBoard({ groups }: { groups: ReviewGroup[] }) {
     return n;
   });
   const edit = (id: string, e: Edit) => setEdits((x) => ({ ...x, [id]: { ...x[id], ...e } }));
+  /** 국서 칸 배치: 사람이 주관 국서를 바꾸면 그 국서 칸으로 옮겨 보인다 */
+  const deptOf = (i: ReviewItem) => ((edits[i.id]?.lead_department ?? i.dept) || null) as DepartmentCode | null;
 
-  async function submit(body: { approve: { id: string; edits?: Edit }[]; reject: string[] }) {
+  async function submit(body: { approve: { id: string; edits?: Edit }[]; reject: string[]; create?: { project_key: string | null; title: string; lead_department: string; support_departments: string[]; due_date: string | null }[] }) {
     setPending(true);
     try {
       const r = await api<{ projects: number; tasks: number; updates: number; deadlines: number; rejected: number; projectIds: string[] }>("/api/proposals/decide", { body });
-      const parts = [r.projects && `사업 ${r.projects}건`, r.tasks && `업무 ${r.tasks}건`, r.updates && `사업 변경 ${r.updates}건`, r.deadlines && `마감 변경 ${r.deadlines}건`].filter(Boolean);
+      const parts = [r.projects && `사업 ${r.projects}건`, r.tasks && `업무 ${r.tasks}건`, r.updates && `변경 ${r.updates}건`, r.deadlines && `마감 변경 ${r.deadlines}건`].filter(Boolean);
       toast(`${parts.length ? `${parts.join(", ")} 승인` : ""}${r.rejected ? `${parts.length ? ", " : ""}${r.rejected}건 거절` : ""}했습니다.`, {
         action: r.projectIds[0] ? { label: "사업에서 보기", onClick: () => router.push(`/projects/${r.projectIds[0]}`) } : undefined,
         ms: 8000,
       });
       setEdits({});
+      setManual([]);
       router.refresh();
     } catch (e) {
       toast((e as Error).message, { tone: "error" });
@@ -63,6 +69,75 @@ export function ReviewBoard({ groups }: { groups: ReviewGroup[] }) {
   }
 
   const selected = all.filter((i) => checked.has(i.id));
+  const rowProps = (i: ReviewItem, meetingId: string | null) => ({ item: i, meetingId, checked: checked.has(i.id), onToggle: () => toggle(i.id), edit: edits[i.id] ?? {}, onEdit: (e: Edit) => edit(i.id, e) });
+
+  /** 사업 하나: 사업 단위 항목 → 국서별(기획·재정·사무·홍보·집행) 제안 + 이미 있는 업무 + 직접 추가 */
+  const renderProject = (pg: ReviewGroup["projects"][number], meetingId: string | null, isOthers = false) => {
+    const projectItems = pg.items.filter((i) => i.kind === "new_project" || i.kind === "update_project");
+    const rest = pg.items.filter((i) => !projectItems.includes(i));
+    return (
+      <div key={pg.key} className="rounded-xl border border-border bg-surface" data-review-project={pg.title}>
+        <div className="border-b border-border px-4 py-2 text-sm font-semibold">
+          {isOthers ? null : pg.isNew ? <span className="mr-2 rounded bg-[#EEF3F8] px-1.5 py-0.5 text-xs text-info">새 사업</span> : <span className="mr-2 rounded bg-bg px-1.5 py-0.5 text-xs text-muted">기존 사업</span>}
+          {pg.title}
+        </div>
+        {projectItems.length ? <ul className="divide-y divide-border border-b border-border">{projectItems.map((i) => <Row key={i.id} {...rowProps(i, meetingId)} />)}</ul> : null}
+        <div className="divide-y divide-border">
+          {DEPARTMENT_CODES.map((code) => {
+            const items = rest.filter((i) => (deptOf(i) ?? "planning") === code);
+            const existing = pg.existing.filter((e) => e.dept === code);
+            const mine = manual.filter((m) => m.projectKey === (isOthers ? null : pg.key) && m.dept === code);
+            const t = DEPARTMENTS[code];
+            return (
+              <section key={code} aria-label={`${t.nameKo} 업무`} data-review-dept={code}>
+                <h3 className="flex items-center gap-2 px-4 py-1.5 text-xs font-semibold" style={{ backgroundColor: t.chipBg, color: t.ink }}>
+                  {t.nameKo}
+                  <span className="font-normal">제안 {items.length}{existing.length ? ` · 이미 배정 ${existing.length}` : ""}{mine.length ? ` · 직접 추가 ${mine.length}` : ""}</span>
+                </h3>
+                <ul className="divide-y divide-border">
+                  {items.map((i) => <Row key={i.id} {...rowProps(i, meetingId)} />)}
+                  {mine.map((m) => (
+                    <li key={m.tmp} className="grid gap-2 px-4 py-2 text-sm md:grid-cols-[1fr_auto]" data-manual={m.title}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded bg-[#EAF4EC] px-1.5 py-0.5 text-xs font-medium text-success">직접 추가</span>
+                        <input aria-label="직접 추가 업무명" className="min-w-0 flex-1 rounded border border-border px-1 py-0.5" value={m.title} onChange={(e) => setManual((xs) => xs.map((x) => (x.tmp === m.tmp ? { ...x, title: e.target.value } : x)))} />
+                        <select aria-label="직접 추가 주관 국서" className="h-7 rounded border border-border bg-surface text-xs" value={m.dept} onChange={(e) => setManual((xs) => xs.map((x) => (x.tmp === m.tmp ? { ...x, dept: e.target.value as DepartmentCode } : x)))}>
+                          {DEPARTMENT_CODES.map((d) => <option key={d} value={d}>{DEPARTMENTS[d].nameKo}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs">
+                        <label className="flex items-center gap-1">마감 <input aria-label="직접 추가 마감" type="date" className="h-7 rounded border border-border px-1" value={m.due ?? ""} onChange={(e) => setManual((xs) => xs.map((x) => (x.tmp === m.tmp ? { ...x, due: e.target.value || null } : x)))} /></label>
+                        <button className="underline" onClick={() => setManual((xs) => xs.filter((x) => x.tmp !== m.tmp))}>빼기</button>
+                      </div>
+                    </li>
+                  ))}
+                  {existing.map((e) => (
+                    <li key={e.id} className="flex flex-wrap items-center gap-2 px-4 py-1.5 text-xs text-muted" data-existing={e.title}>
+                      <span className="rounded border border-border px-1.5 py-0.5">이미 배정</span>
+                      <span className={e.done ? "line-through" : "text-text"}>{e.title}</span>
+                      <span className="tabular">마감 {e.due ?? "없음"}{e.due ? (e.dueState === "confirmed" ? " (확정)" : " (제안)") : ""}</span>
+                      {e.previewDue ? <span className="text-warning-text">→ 행사일 변경 승인 시 {e.previewDue}로 다시 계산</span> : null}
+                    </li>
+                  ))}
+                  {items.length + existing.length + mine.length === 0 ? <li className="px-4 py-1.5 text-xs text-muted">없음</li> : null}
+                </ul>
+                <div className="px-4 pb-2">
+                  <button
+                    className="text-xs underline"
+                    onClick={() => setManual((xs) => [...xs, { tmp: `${Date.now()}-${Math.random()}`, projectKey: isOthers ? null : pg.key, title: "", dept: code, due: null }])}
+                  >
+                    + {t.nameKo} 업무 직접 추가
+                  </button>
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const validManual = manual.filter((m) => m.title.trim());
   return (
     <div className="space-y-6 pb-24">
       {groups.map((g) => (
@@ -70,38 +145,29 @@ export function ReviewBoard({ groups }: { groups: ReviewGroup[] }) {
           <h2 className="flex flex-wrap items-center gap-2 text-base font-semibold">
             {g.meetingId ? <Link href={`/minutes?id=${g.meetingId}&tab=summary`} className="hover:underline">{g.label}</Link> : g.label}
           </h2>
-          {g.projects.map((pg) => (
-            <div key={pg.key} className="rounded-xl border border-border bg-surface" data-review-project={pg.title}>
-              <div className="border-b border-border px-4 py-2 text-sm font-semibold">
-                {pg.isNew ? <span className="mr-2 rounded bg-[#EEF3F8] px-1.5 py-0.5 text-xs text-info">새 사업</span> : <span className="mr-2 rounded bg-bg px-1.5 py-0.5 text-xs text-muted">기존 사업</span>}
-                {pg.title}
-              </div>
-              <ul className="divide-y divide-border">
-                {pg.items.map((i) => <Row key={i.id} item={i} meetingId={g.meetingId} checked={checked.has(i.id)} onToggle={() => toggle(i.id)} edit={edits[i.id] ?? {}} onEdit={(e) => edit(i.id, e)} />)}
-              </ul>
-            </div>
-          ))}
-          {g.others.length ? (
-            <div className="rounded-xl border border-border bg-surface">
-              <div className="border-b border-border px-4 py-2 text-sm font-semibold">{g.meetingId ? "사업 외 업무" : "요청"}</div>
-              <ul className="divide-y divide-border">
-                {g.others.map((i) => <Row key={i.id} item={i} meetingId={g.meetingId} checked={checked.has(i.id)} onToggle={() => toggle(i.id)} edit={edits[i.id] ?? {}} onEdit={(e) => edit(i.id, e)} />)}
-              </ul>
-            </div>
-          ) : null}
+          {g.projects.map((pg) => renderProject(pg, g.meetingId))}
+          {g.others.length ? renderProject({ key: `others-${g.id}`, title: g.meetingId ? "사업 외 업무" : "요청", isNew: false, items: g.others, existing: [] }, g.meetingId, true) : null}
         </section>
       ))}
 
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface/95 backdrop-blur">
         <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-2 px-4 py-3">
-          <span className="text-sm text-muted">전체 {all.length}건 중 <strong className="text-text tabular">{selected.length}</strong>건 선택 · 추론 항목은 기본 선택 해제</span>
+          <span className="text-sm text-muted">
+            전체 {all.length}건 중 <strong className="text-text tabular">{selected.length}</strong>건 선택{validManual.length ? ` · 직접 추가 ${validManual.length}건` : ""} · 추론 항목은 기본 선택 해제
+          </span>
           <div className="flex gap-2">
             <Button variant="secondary" disabled={pending || all.length === 0} onClick={() => setRejectAll(true)}>모두 거절</Button>
             <Button
-              disabled={pending || selected.length === 0}
-              onClick={() => void submit({ approve: selected.map((i) => ({ id: i.id, edits: edits[i.id] && Object.keys(edits[i.id]!).length ? edits[i.id] : undefined })), reject: [] })}
+              disabled={pending || selected.length + validManual.length === 0}
+              onClick={() =>
+                void submit({
+                  approve: selected.map((i) => ({ id: i.id, edits: edits[i.id] && Object.keys(edits[i.id]!).length ? edits[i.id] : undefined })),
+                  reject: [],
+                  create: validManual.map((m) => ({ project_key: m.projectKey, title: m.title.trim(), lead_department: m.dept, support_departments: [], due_date: m.due })),
+                })
+              }
             >
-              {pending ? "처리 중…" : `선택 승인 (${selected.length})`}
+              {pending ? "처리 중…" : `선택 승인 (${selected.length + validManual.length})`}
             </Button>
           </div>
         </div>
@@ -123,9 +189,11 @@ export function ReviewBoard({ groups }: { groups: ReviewGroup[] }) {
 
 function Row({ item: i, meetingId, checked, onToggle, edit, onEdit }: { item: ReviewItem; meetingId: string | null; checked: boolean; onToggle: () => void; edit: Edit; onEdit: (e: Edit) => void }) {
   const p = i.payload as Record<string, unknown>;
-  const lead = (edit.lead_department ?? p.lead_department) as DepartmentCode | undefined;
-  const support = (edit.support_departments ?? (p.support_departments as DepartmentCode[] | undefined) ?? []).filter((d) => d !== lead);
-  const due = edit.due_date !== undefined ? edit.due_date : (p.due_date as string | null | undefined) ?? null;
+  const ch = (p.changes as Record<string, unknown> | undefined) ?? {};
+  const isTask = i.kind === "new_task" || i.kind === "update_task";
+  const lead = (edit.lead_department ?? p.lead_department ?? ch.lead_department ?? i.dept ?? undefined) as DepartmentCode | undefined;
+  const support = (edit.support_departments ?? (p.support_departments as DepartmentCode[] | undefined) ?? (ch.support_departments as DepartmentCode[] | undefined) ?? []).filter((d) => d !== lead);
+  const due = edit.due_date !== undefined ? edit.due_date : ((p.due_date ?? ch.due_date ?? i.before?.due_date) as string | null | undefined) ?? null;
   const feasible = p.due_feasible !== false;
   return (
     <li className={cn("grid gap-2 px-4 py-3 text-sm md:grid-cols-[auto_1fr_auto]", !checked && "bg-bg/60")} data-proposal={i.title} data-kind={i.kind}>
@@ -138,11 +206,11 @@ function Row({ item: i, meetingId, checked, onToggle, edit, onEdit }: { item: Re
               <Sparkles className="h-3 w-3" /> 추론
             </span>
           ) : null}
-          {i.kind === "new_project" || i.kind === "new_task" ? (
+          {i.kind === "new_project" || isTask ? (
             <input
               aria-label="제목"
               className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-medium hover:border-border focus:border-info focus:outline-none"
-              defaultValue={i.title}
+              defaultValue={i.kind === "update_task" ? String(ch.title ?? i.title) : i.title}
               onBlur={(e) => e.target.value.trim() && e.target.value !== i.title && onEdit({ title: e.target.value.trim() })}
             />
           ) : (
@@ -150,7 +218,7 @@ function Row({ item: i, meetingId, checked, onToggle, edit, onEdit }: { item: Re
           )}
         </div>
 
-        {i.kind === "new_task" && lead ? (
+        {isTask && lead ? (
           <div className="flex flex-wrap items-center gap-2">
             <label className="flex items-center gap-1 text-xs text-muted">
               주관
@@ -230,12 +298,13 @@ function Row({ item: i, meetingId, checked, onToggle, edit, onEdit }: { item: Re
         ) : null}
       </div>
 
-      {i.kind === "new_task" ? (
+      {isTask ? (
         <div className="space-y-1 text-xs md:w-56">
           <label className="flex items-center gap-1">
-            추천 마감
-            <input aria-label="마감" type="date" className="h-7 rounded border border-border px-1" defaultValue={due ?? ""} onBlur={(e) => (e.target.value || null) !== (p.due_date ?? null) && onEdit({ due_date: e.target.value || null })} />
+            {i.kind === "update_task" ? "마감" : "추천 마감"}
+            <input aria-label="마감" type="date" className="h-7 rounded border border-border px-1" defaultValue={due ?? ""} onBlur={(e) => (e.target.value || null) !== ((p.due_date ?? ch.due_date ?? null) as string | null) && onEdit({ due_date: e.target.value || null })} />
           </label>
+          {i.kind === "update_task" && i.before && "due_date" in i.before ? <p className="text-muted">지금 마감: {String(i.before.due_date ?? "없음")}</p> : null}
           {p.due_reason ? (
             <p className={cn("leading-snug", feasible ? "text-muted" : "text-danger")} title={String(p.due_reason)}>
               {!feasible ? <AlertTriangle className="mr-1 inline h-3 w-3" /> : null}

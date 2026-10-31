@@ -39,6 +39,19 @@ export const decisionSchema = z.object({
     .max(300)
     .default([]),
   reject: z.array(z.string().uuid()).max(300).default([]),
+  /** 검토 화면에서 사람이 직접 추가한 업무(제안에 빠진 일) — 승인과 같은 트랜잭션에서 만든다 */
+  create: z
+    .array(
+      z.object({
+        project_key: z.string().max(200).nullable(),
+        title: z.string().trim().min(1, "업무명을 입력하세요.").max(150),
+        lead_department: dept,
+        support_departments: z.array(dept).max(4).default([]),
+        due_date: date.default(null),
+      }),
+    )
+    .max(50)
+    .default([]),
 });
 
 export type DecisionInput = z.input<typeof decisionSchema>;
@@ -59,8 +72,8 @@ export async function decideProposals(db: Db, actor: ActorT, raw: unknown) {
   assertCan(actor, { type: "proposal.approve" });
   const parsed = decisionSchema.safeParse(raw);
   if (!parsed.success) throw new ServiceError(parsed.error.issues[0]?.message ?? "입력값 오류");
-  const { approve, reject } = parsed.data;
-  if (approve.length + reject.length === 0) throw new ServiceError("선택한 제안이 없습니다.");
+  const { approve, reject, create } = parsed.data;
+  if (approve.length + reject.length + create.length === 0) throw new ServiceError("선택한 제안이 없습니다.");
 
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`propose:${actor.termId}`}))`;
@@ -181,7 +194,7 @@ export async function decideProposals(db: Db, actor: ActorT, raw: unknown) {
         if ("due_date" in ch) {
           data.due_date = ch.due_date ? new Date(`${ch.due_date}T00:00:00Z`) : null;
           data.due_state = "confirmed";
-          data.due_reason = "결재 기획안 기준 재배정";
+          data.due_reason = p.source_type === "plan" ? "결재 기획안 기준 재배정" : p.source_type === "meeting" ? "회의록 기한" : "검토 화면에서 수정";
         }
         await tx.task.update({ where: { id: task.id }, data });
         if (ch.lead_department || ch.support_departments) {
@@ -210,6 +223,28 @@ export async function decideProposals(db: Db, actor: ActorT, raw: unknown) {
       } else {
         throw new ServiceError("지원하지 않는 제안 종류입니다.");
       }
+    }
+
+    // 1-2) 사람이 직접 추가한 업무
+    for (const c of create) {
+      const isUuid = c.project_key && /^[0-9a-f-]{36}$/.test(c.project_key);
+      let projectId: string | null = null;
+      if (c.project_key) {
+        projectId = projectIdOfKey.get(c.project_key) ?? null;
+        if (!projectId && isUuid) projectId = (await tx.project.findFirst({ where: { id: c.project_key, term_id: actor.termId, deleted_at: null }, select: { id: true } }))?.id ?? null;
+        if (!projectId) throw new ServiceError(`'${c.title}': 이 업무의 사업 제안을 함께 승인하세요.`);
+      }
+      const { guessTemplate } = await import("@/lib/ai/propose");
+      const tpl = guessTemplate(c.title);
+      const tplFree = tpl && projectId ? !(await tx.task.count({ where: { project_id: projectId, template_key: tpl, deleted_at: null } })) : false;
+      const v = parseTask({ title: c.title, project_id: projectId, lead_department_id: depts[c.lead_department], support_department_ids: c.support_departments.filter((d) => d !== c.lead_department).map((d) => depts[d]), due_date: c.due_date });
+      await insertTaskTx(tx, actor, v, {
+        template_key: tplFree ? tpl : null,
+        due_state: c.due_date ? "confirmed" : "proposed",
+        due_reason: c.due_date ? "검토 화면에서 직접 추가" : null,
+      });
+      if (projectId) touchedProjects.add(projectId);
+      created.tasks++;
     }
 
     // 2) 거절

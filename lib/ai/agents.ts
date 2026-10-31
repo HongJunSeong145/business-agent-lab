@@ -130,11 +130,18 @@ export async function runProposeJob(db: Db, provider: AiProvider, aiJobId: strin
     const paragraphs = maskedParagraphs(meeting.files[0]?.extracted_text ?? "");
     const projects = await db.project.findMany({
       where: { term_id: termId, deleted_at: null, status: { notIn: ["cancelled", "done"] } },
-      include: { funding_sources: true, tasks: { where: { deleted_at: null, status: { not: "cancelled" } }, select: { title: true, template_key: true } } },
+      include: {
+        funding_sources: true,
+        tasks: {
+          where: { deleted_at: null, status: { not: "cancelled" } },
+          select: { id: true, title: true, template_key: true, due_date: true, is_completed: true, status: true, source_proposal: { select: { source_type: true, source_id: true } }, departments: { where: { role: "lead" }, select: { department: { select: { code: true } } } } },
+        },
+      },
     });
     const existing: ExistingProject[] = projects.map((p) => ({
       id: p.id, title: p.title, event_start: p.event_start ? dateColumnToString(p.event_start) : null, venue: p.venue, expected_beneficiaries: p.expected_beneficiaries,
-      uses_external_vendor: p.uses_external_vendor, funding: p.funding_sources.map((f) => f.source as FundingSource), tasks: p.tasks,
+      uses_external_vendor: p.uses_external_vendor, funding: p.funding_sources.map((f) => f.source as FundingSource),
+      tasks: p.tasks.map((t) => ({ id: t.id, title: t.title, template_key: t.template_key, due: t.due_date ? dateColumnToString(t.due_date) : null, lead: t.departments[0]?.department.code ?? null, done: t.is_completed || t.status === "done", fromMeeting: t.source_proposal?.source_type === "meeting" ? t.source_proposal.source_id : null })),
     }));
     const summary = analysis.summary as unknown as A1Summary;
     const s = await aiSettings(db, termId);
@@ -145,13 +152,14 @@ export async function runProposeJob(db: Db, provider: AiProvider, aiJobId: strin
       jobId: aiJobId,
       ...s,
       system: A2_SYSTEM,
-      prompt: a2Prompt({ meetingDate, summaryJson: JSON.stringify(summary), projects: existing.map((p) => ({ id: p.id, title: p.title, event_start: p.event_start, tasks: p.tasks.map((t) => t.title) })) }),
+      prompt: a2Prompt({ meetingDate, summaryJson: JSON.stringify(summary), projects: existing.map((p) => ({ id: p.id, title: p.title, event_start: p.event_start, tasks: p.tasks.map((t) => `${t.title}${t.lead ? `(${t.lead})` : ""}${t.due ? ` 마감 ${t.due}` : ""}`) })) }),
       mockContext: { summary, meetingDate, projects: existing.map((p) => ({ id: p.id, title: p.title })) },
     });
     const a2 = groundAll(raw, paragraphs);
     const members = await db.membership.findMany({ where: { term_id: termId }, include: { user: { select: { id: true, display_name: true } } } });
     const rows = buildProposals({
       meetingId, a2, existing, members: members.map((m) => ({ id: m.user.id, name: m.user.display_name })), params: await loadRuleParams(db, termId), today: todayKst(),
+      actionItems: summary.action_items.map((x) => ({ department: x.department, what: x.what, due_date: x.due_date, para: x.para, quote: x.quote })),
     });
 
     return await db.$transaction(async (tx) => {
