@@ -155,45 +155,92 @@ export async function recomputeReadiness(tx: Tx, termId: string, scope: { taskId
   }
 }
 
+export type ParsedTask = z.output<typeof createTaskSchema>;
+export type TaskExtra = {
+  template_key?: string | null;
+  due_state?: "proposed" | "confirmed";
+  due_reason?: string | null;
+  due_feasible?: boolean;
+  source_proposal_id?: string | null;
+};
+
+export function parseTask(raw: unknown): ParsedTask {
+  return parse(createTaskSchema, raw);
+}
+
+/** 트랜잭션 안에서 업무 생성 — 직접 생성과 AI 제안 승인이 함께 쓴다 */
+export async function insertTaskTx(tx: Tx, actor: ActorT, v: ParsedTask, extra: TaskExtra = {}) {
+  await validateRefs(tx, actor.termId, v);
+  const task = await tx.task.create({
+    data: {
+      project_id: v.project_id ?? null,
+      title: v.title,
+      description: v.description ?? null,
+      status: "todo",
+      due_date: v.due_date ? new Date(`${v.due_date}T00:00:00Z`) : null,
+      // D1: 국장 이상이 직접 입력한 마감은 즉시 확정
+      due_state: extra.due_state ?? "confirmed",
+      due_reason: extra.due_reason !== undefined ? extra.due_reason : v.due_date ? "직접 입력" : null,
+      due_feasible: extra.due_feasible ?? true,
+      template_key: extra.template_key ?? null,
+      source_proposal_id: extra.source_proposal_id ?? null,
+      weight: v.weight,
+      acceptance_criteria: v.acceptance_criteria,
+      allow_draft_start: v.allow_draft_start,
+      departments: {
+        create: [
+          { department_id: v.lead_department_id, role: "lead" },
+          ...v.support_department_ids.map((d) => ({ department_id: d, role: "support" })),
+        ],
+      },
+      assignees: { create: [...new Set(v.assignee_ids)].map((u) => ({ user_id: u })) },
+    },
+  });
+  if (v.dependencies.length) {
+    await lockDependencies(tx, actor.termId);
+    for (const d of v.dependencies) {
+      await loadTask(tx, actor.termId, d.depends_on_task_id);
+      await assertNoCycle(tx, actor.termId, task.id, d.depends_on_task_id);
+      await tx.taskDependency.create({ data: { task_id: task.id, depends_on_task_id: d.depends_on_task_id, type: d.type } });
+    }
+  }
+  await writeAudit(tx, { actorId: actor.userId, action: "task.create", entityType: "task", entityId: task.id, diff: { after: v, ...extra } });
+  await recomputeReadiness(tx, actor.termId, { taskIds: [task.id] });
+  return task;
+}
+
 export async function createTask(db: Db, actor: ActorT, raw: unknown) {
   assertCan(actor, { type: "task.create" });
   const v = parse(createTaskSchema, raw);
   return db.$transaction(async (tx) => {
-    await validateRefs(tx, actor.termId, v);
-    const task = await tx.task.create({
-      data: {
-        project_id: v.project_id ?? null,
-        title: v.title,
-        description: v.description ?? null,
-        status: "todo",
-        due_date: v.due_date ? new Date(`${v.due_date}T00:00:00Z`) : null,
-        // D1: 국장 이상이 직접 입력한 마감은 즉시 확정
-        due_state: "confirmed",
-        due_reason: v.due_date ? "직접 입력" : null,
-        weight: v.weight,
-        acceptance_criteria: v.acceptance_criteria,
-        allow_draft_start: v.allow_draft_start,
-        departments: {
-          create: [
-            { department_id: v.lead_department_id, role: "lead" },
-            ...v.support_department_ids.map((d) => ({ department_id: d, role: "support" })),
-          ],
-        },
-        assignees: { create: [...new Set(v.assignee_ids)].map((u) => ({ user_id: u })) },
-      },
-    });
-    if (v.dependencies.length) {
-      await lockDependencies(tx, actor.termId);
-      for (const d of v.dependencies) {
-        await loadTask(tx, actor.termId, d.depends_on_task_id);
-        await assertNoCycle(tx, actor.termId, task.id, d.depends_on_task_id);
-        await tx.taskDependency.create({ data: { task_id: task.id, depends_on_task_id: d.depends_on_task_id, type: d.type } });
-      }
-    }
-    await writeAudit(tx, { actorId: actor.userId, action: "task.create", entityType: "task", entityId: task.id, diff: { after: v } });
-    await recomputeReadiness(tx, actor.termId, { taskIds: [task.id] });
+    const task = await insertTaskTx(tx, actor, v);
     return tx.task.findUniqueOrThrow({ where: { id: task.id } });
   });
+}
+
+/** 같은 사업의 표준 업무끼리 빠진 의존관계를 템플릿대로 잇는다 (제안 승인으로 업무가 나뉘어 생길 때) */
+export async function linkTemplateDependencies(tx: Tx, termId: string, projectId: string) {
+  const { TEMPLATES } = await import("@kgb/rules");
+  const rows = await tx.task.findMany({ where: { project_id: projectId, deleted_at: null, template_key: { not: null }, status: { not: "cancelled" } }, select: { id: true, template_key: true } });
+  const byKey = new Map(rows.map((r) => [r.template_key!, r.id]));
+  const existing = await tx.taskDependency.findMany({ where: { task_id: { in: rows.map((r) => r.id) } }, select: { task_id: true, depends_on_task_id: true } });
+  const has = new Set(existing.map((e) => `${e.task_id}>${e.depends_on_task_id}`));
+  const project = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { uses_external_vendor: true } });
+  let added = 0;
+  for (const r of rows) {
+    const def = TEMPLATES[r.template_key as keyof typeof TEMPLATES];
+    if (!def) continue;
+    const deps = [...def.deps, ...(def.key === "FIN_PURCHASE" && project.uses_external_vendor ? [{ key: "VENDOR_CONFIRM" as const, type: "finish_to_start" as const }] : [])];
+    for (const d of deps) {
+      const pre = byKey.get(d.key);
+      if (!pre || has.has(`${r.id}>${pre}`)) continue;
+      await tx.taskDependency.create({ data: { task_id: r.id, depends_on_task_id: pre, type: d.type } });
+      has.add(`${r.id}>${pre}`);
+      added++;
+    }
+  }
+  if (added) await recomputeReadiness(tx, termId, { taskIds: rows.map((r) => r.id) });
+  return added;
 }
 
 export async function updateTask(db: Db, actor: ActorT, id: string, raw: unknown) {

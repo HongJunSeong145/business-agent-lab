@@ -168,3 +168,28 @@ export async function getMeetingDetail(db: Db, termId: string, id: string) {
     },
   });
 }
+
+/** 정리본 편집 (8-3): 편집본은 새 버전으로 저장, 근거(문단·인용)는 다시 검증 */
+export async function editAnalysis(db: Db, actor: Actor & { termId: string }, meetingId: string, raw: unknown) {
+  assertCan(actor, { type: "meeting.reanalyze" }, await getPermissionSettings(db, actor.termId));
+  const { a1Schema } = await import("@/lib/ai/schemas/a1");
+  const { groundAll } = await import("@/lib/ai/grounding");
+  const { toParagraphs } = await import("@/lib/minutes-text");
+  const { maskText } = await import("@/lib/audit/mask");
+  const r = a1Schema.safeParse((raw as { summary?: unknown } | null)?.summary);
+  if (!r.success) throw new ServiceError(`정리본 형식 오류: ${r.error.issues[0]?.path.join(".")} ${r.error.issues[0]?.message}`);
+  const m = await db.meeting.findFirst({
+    where: { id: meetingId, term_id: actor.termId, deleted_at: null },
+    include: { files: { take: 1, orderBy: { created_at: "desc" } }, analyses: { take: 1, orderBy: { version: "desc" } } },
+  });
+  if (!m) throw new ServiceError("회의록을 찾을 수 없습니다.", 404);
+  const paras = toParagraphs(m.files[0]?.extracted_text ?? "").map((p) => ({ n: p.n, text: maskText(p.text) }));
+  const summary = groundAll(r.data, paras);
+  return db.$transaction(async (tx) => {
+    const a = await tx.meetingAnalysis.create({
+      data: { meeting_id: meetingId, version: (m.analyses[0]?.version ?? 0) + 1, summary: summary as object, model: "user-edit", prompt_version: m.analyses[0]?.prompt_version ?? null, edited_by: actor.userId },
+    });
+    await writeAudit(tx, { actorId: actor.userId, action: "meeting.analysis_edit", entityType: "meeting", entityId: meetingId, diff: { version: a.version } });
+    return { version: a.version };
+  });
+}

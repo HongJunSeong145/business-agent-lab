@@ -6,10 +6,12 @@ import { PgBoss } from "pg-boss";
  */
 export const QUEUES = {
   extract: "meeting-extract",
+  analyze: "meeting-analyze",
+  propose: "meeting-propose",
 } as const;
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 
-export const JOB_TYPE_TO_QUEUE: Record<string, QueueName> = { extract: QUEUES.extract };
+export const JOB_TYPE_TO_QUEUE: Record<string, QueueName> = { extract: QUEUES.extract, analyze_meeting: QUEUES.analyze, propose_work: QUEUES.propose };
 
 const g = globalThis as unknown as { kgbBoss?: Promise<PgBoss> };
 

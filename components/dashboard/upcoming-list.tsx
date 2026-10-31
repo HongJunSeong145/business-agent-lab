@@ -12,7 +12,7 @@ import { cn, dDayLabel, formatKoreanDate } from "@/lib/utils";
 
 export type UpcomingItem = {
   id: string;
-  kind: "deadline" | "milestone";
+  kind: "deadline" | "milestone" | "proposal";
   title: string;
   due: string;
   dueState: "proposed" | "confirmed";
@@ -61,6 +61,11 @@ export function UpcomingList({ items, today, canEdit }: { items: UpcomingItem[];
                   {!i.feasible ? <AlertTriangle aria-label="일정 불가" className="h-3.5 w-3.5 shrink-0 text-danger" /> : null}
                   {i.kind === "deadline" ? (
                     <Link href={href(i.id)} scroll={false} className="min-w-0 flex-1 truncate hover:underline">{i.title}</Link>
+                  ) : i.kind === "proposal" ? (
+                    <span className="min-w-0 flex-1 truncate text-muted">
+                      {i.title} <span className="rounded border border-dashed border-border px-1 text-[10px]">AI 제안</span>{" "}
+                      {canEdit ? <Link href="/review" className="text-xs text-text underline">검토</Link> : null}
+                    </span>
                   ) : (
                     <span className="min-w-0 flex-1 truncate">{i.title}{i.projectTitle ? <span className="text-muted"> · {i.projectTitle}</span> : null}</span>
                   )}

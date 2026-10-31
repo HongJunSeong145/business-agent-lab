@@ -92,7 +92,8 @@ test("캘린더: 제안 마감을 드래그로 옮기면 확인 후 확정 마�
   await loginOk(page, E2E.adminEmail, E2E.adminPassword);
   await page.locator(".fc-next-button").click();
   await expect(page.locator(".fc-toolbar-title")).toHaveText("2026년 11월");
-  const ev = page.locator(".fc-event", { hasText: "기획안 검토 및 결재" });
+  // 승인 전 AI 제안(고스트, kgb-ghost)은 제외하고 실제 업무 마감만
+  const ev = page.locator(".fc-event:not(.kgb-ghost)", { hasText: "기획안 검토 및 결재" });
   await expect(ev).toHaveClass(/kgb-proposed/);
   const target = page.locator('.fc-daygrid-day[data-date="2026-11-04"] .fc-daygrid-day-frame');
   const from = (await ev.boundingBox())!;
@@ -106,7 +107,7 @@ test("캘린더: 제안 마감을 드래그로 옮기면 확인 후 확정 마�
   await expect(dialog).toContainText("2026-11-05 → 2026-11-04");
   await dialog.getByRole("button", { name: "바꾸기" }).click();
   await expect.poll(async () => taskDue(P5, "PLN_APPROVAL")).toEqual({ due: "2026-11-04", due_state: "confirmed" });
-  await expect(page.locator(".fc-event", { hasText: "기획안 검토 및 결재" })).toHaveClass(/kgb-confirmed/);
+  await expect(page.locator(".fc-event:not(.kgb-ghost)", { hasText: "기획안 검토 및 결재" })).toHaveClass(/kgb-confirmed/);
 });
 
 test("T16: 행사일 변경 → 제안 마감만 재계산, 확정 마감 유지 + 충돌 경고 → 일괄 재계산", async ({ page }) => {

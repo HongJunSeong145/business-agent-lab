@@ -13,6 +13,7 @@ export default function globalSetup() {
     SEED_DEMO_PASSWORD: E2E.demoPassword,
     DOTENV_CONFIG_QUIET: "true",
   };
-  const run = (cmd: string) => execSync(cmd, { stdio: "inherit", env });
+  const run = (cmd: string, extra: Record<string, string> = {}) => execSync(cmd, { stdio: "inherit", env: { ...env, ...extra } });
   run("pnpm exec tsx tests/e2e/prepare-db.ts");
+  run("pnpm exec tsx tests/e2e/prepare-db.ts", { DATABASE_URL: E2E.noAiDatabaseUrl });
 }

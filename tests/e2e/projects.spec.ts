@@ -40,7 +40,8 @@ test("회장: 사업 만들기 → 업무 2개(협업·의존) → 사업 보드
   await page.getByRole("button", { name: "사업 만들기" }).click();
   const d = page.getByRole("dialog", { name: "사업 만들기" });
   await d.getByLabel("사업명").fill(PROJECT);
-  await d.getByLabel("행사 시작일").fill("2026-12-10");
+  // 다른 테스트(AI 승인)로 생긴 12/10 사업보다 먼저 오도록 — 대시보드 "가장 가까운 사업" 검증용
+  await d.getByLabel("행사 시작일").fill("2026-12-01");
   await d.getByLabel("장소").fill("데모관 로비");
   await d.getByLabel("예상 수혜 인원").fill("150");
   await d.getByRole("checkbox", { name: "학생회비" }).check();

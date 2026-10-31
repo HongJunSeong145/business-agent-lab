@@ -23,7 +23,8 @@
     "db:reset": "tsx scripts/db-reset.ts",
     "admin:ensure": "tsx scripts/ensure-admin.ts",
     "worker": "tsx worker/index.ts",
-    "fixtures:minutes": "tsx scripts/fixtures/generate-minutes.ts"
+    "fixtures:minutes": "tsx scripts/fixtures/generate-minutes.ts",
+    "ai:eval": "tsx scripts/ai-eval.ts"
   },
   "dependencies": {
     "@fullcalendar/core": "6.1.21",

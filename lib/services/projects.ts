@@ -65,33 +65,43 @@ async function computeQuarter(db: Db | Prisma.TransactionClient, termId: string,
 
 const toDate = (s: string | null) => (s ? new Date(`${s}T00:00:00Z`) : null);
 
+export type ParsedProject = z.output<typeof projectSchema>;
+
+/** 트랜잭션 안에서 사업 생성(감사 로그·증빙 요구 포함) — 직접 생성과 AI 제안 승인이 함께 쓴다 */
+export async function insertProjectTx(tx: Prisma.TransactionClient, actor: ActorT, v: ParsedProject, extra: { created_from_meeting_id?: string | null } = {}) {
+  const quarter = await computeQuarter(tx, actor.termId, v.event_start);
+  const p = await tx.project.create({
+    data: {
+      term_id: actor.termId,
+      title: v.title,
+      category: v.category,
+      status: "planning",
+      event_start: toDate(v.event_start),
+      event_end: toDate(v.event_end ?? v.event_start),
+      venue: v.venue,
+      expected_beneficiaries: v.expected_beneficiaries,
+      host: v.host,
+      organizer: v.organizer,
+      uses_external_vendor: v.uses_external_vendor,
+      promo_tier: v.promo_tier,
+      quarter,
+      created_from_meeting_id: extra.created_from_meeting_id ?? null,
+      funding_sources: { create: v.funding.map((f) => ({ source: f.source, amount_planned: BigInt(f.amount_planned) })) },
+    },
+  });
+  await writeAudit(tx, { actorId: actor.userId, action: "project.create", entityType: "project", entityId: p.id, diff: { after: { ...v }, from_meeting: extra.created_from_meeting_id ?? null } });
+  await recalcProjectSchedule(tx, actor.termId, p.id, "proposed"); // 증빙 요구사항(재원 규칙) 생성
+  return p;
+}
+
+export function parseProject(raw: unknown): ParsedProject {
+  return parse(projectSchema, raw);
+}
+
 export async function createProject(db: Db, actor: ActorT, raw: unknown) {
   assertCan(actor, { type: "project.create" });
   const v = parse(projectSchema, raw);
-  const quarter = await computeQuarter(db, actor.termId, v.event_start);
-  return db.$transaction(async (tx) => {
-    const p = await tx.project.create({
-      data: {
-        term_id: actor.termId,
-        title: v.title,
-        category: v.category,
-        status: "planning",
-        event_start: toDate(v.event_start),
-        event_end: toDate(v.event_end ?? v.event_start),
-        venue: v.venue,
-        expected_beneficiaries: v.expected_beneficiaries,
-        host: v.host,
-        organizer: v.organizer,
-        uses_external_vendor: v.uses_external_vendor,
-        promo_tier: v.promo_tier,
-        quarter,
-        funding_sources: { create: v.funding.map((f) => ({ source: f.source, amount_planned: BigInt(f.amount_planned) })) },
-      },
-    });
-    await writeAudit(tx, { actorId: actor.userId, action: "project.create", entityType: "project", entityId: p.id, diff: { after: { ...v } } });
-    await recalcProjectSchedule(tx, actor.termId, p.id, "proposed"); // 증빙 요구사항(재원 규칙) 생성
-    return p;
-  });
+  return db.$transaction((tx) => insertProjectTx(tx, actor, v));
 }
 
 export async function updateProject(db: Db, actor: ActorT, id: string, raw: unknown) {

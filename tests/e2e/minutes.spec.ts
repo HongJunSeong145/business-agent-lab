@@ -4,6 +4,8 @@ import { E2E } from "./fixtures";
 import { formAlert, loginOk } from "./helpers";
 
 const FX = (name: string) => path.resolve("tests/fixtures/minutes", name);
+/** 추출 완료 이후 상태 — Phase 5부터 추출이 끝나면 AI 분석(mock)으로 이어진다 */
+const DONE = /추출 완료|분석 중|검토 대기|완료/;
 
 async function uploadFile(page: Page, name: string, title?: string) {
   await page.getByRole("button", { name: "회의록 업로드" }).click();
@@ -25,7 +27,8 @@ test.describe("회의록 업로드·추출 (T1)", () => {
   for (const name of ["minutes-2up.pdf", "minutes.docx", "minutes.hwpx", "minutes.txt"]) {
     test(`${name}: 업로드 → 추출 완료 → 원문 표시 → 새로고침 후에도 유지`, async ({ page }) => {
       await uploadFile(page, name, `E2E ${name}`);
-      await expect(page.getByTestId("meeting-status")).toHaveText("추출 완료", { timeout: 20_000 });
+      await expect(page.getByTestId("meeting-status")).toHaveText(DONE, { timeout: 30_000 });
+      await page.getByRole("tab", { name: "원문" }).click();
       const original = page.getByTestId("original-text");
       await expect(original).toContainText("12월 10일 종강 간식 행사 진행, 학생회비 사용");
       await expect(original).toContainText("간식 행사 카드뉴스 제작");
@@ -58,14 +61,15 @@ test.describe("회의록 업로드·추출 (T1)", () => {
     await dialog.getByLabel("회의록 내용").fill("E2E 붙여넣기 임시회의\n- 12월 첫째주까지 종이 보수 예정");
     await dialog.getByLabel("회의 유형").selectOption("extraordinary");
     await dialog.getByRole("button", { name: "올리기" }).click();
-    await expect(page.getByTestId("meeting-status")).toHaveText("추출 완료", { timeout: 20_000 });
+    await expect(page.getByTestId("meeting-status")).toHaveText(DONE, { timeout: 30_000 });
     await expect(page.getByRole("heading", { level: 2, name: "E2E 붙여넣기 임시회의" })).toBeVisible();
+    await page.getByRole("tab", { name: "원문" }).click();
     await expect(page.getByTestId("original-text")).toContainText("12월 첫째주까지 종이 보수 예정");
   });
 
   test("원본 내려받기: 서명 URL 로 받을 수 있고, 위조·만료 링크는 거부 (T12 일부)", async ({ page }) => {
     await uploadFile(page, "minutes.txt", "E2E 다운로드");
-    await expect(page.getByTestId("meeting-status")).toHaveText("추출 완료", { timeout: 20_000 });
+    await expect(page.getByTestId("meeting-status")).toHaveText(DONE, { timeout: 30_000 });
     await page.getByRole("tab", { name: "파일" }).click();
     const href = await page.getByTestId("download-original").getAttribute("href");
     expect(href).toMatch(/^\/api\/files\?key=/);
@@ -89,11 +93,11 @@ test.describe("회의록 업로드·추출 (T1)", () => {
 
   test("대시보드 최근 회의록 → 드로어 미리보기 → 회의록 공간", async ({ page }) => {
     await uploadFile(page, "minutes.hwpx", "E2E 드로어 확인");
-    await expect(page.getByTestId("meeting-status")).toHaveText("추출 완료", { timeout: 20_000 });
+    await expect(page.getByTestId("meeting-status")).toHaveText(DONE, { timeout: 30_000 });
     await page.goto("/");
     await page.getByRole("link", { name: /E2E 드로어 확인/ }).first().click();
     const drawer = page.getByRole("dialog");
-    await expect(drawer).toContainText("추출 완료");
+    await expect(drawer).toContainText(DONE);
     await expect(drawer).toContainText("12월 10일 종강 간식 행사 진행");
     await drawer.getByRole("link", { name: /회의록 공간에서 전체 보기/ }).click();
     await expect(page).toHaveURL(/\/minutes\?id=/);
