@@ -15,9 +15,16 @@ import { cn } from "@/lib/utils";
 
 type Edit = { title?: string; event_start?: string | null; lead_department?: DepartmentCode; support_departments?: DepartmentCode[]; due_date?: string | null };
 
-const KIND: Record<string, string> = { new_project: "새 사업", update_project: "사업 변경", new_task: "새 업무", deadline: "마감 변경 요청" };
-const FIELD: Record<string, string> = { event_start: "행사일", venue: "장소", expected_beneficiaries: "수혜 인원", uses_external_vendor: "외부업체", funding: "재원" };
-const fmt = (v: unknown) => (Array.isArray(v) ? v.map((x) => (x === "school" ? "교비" : x === "student_fee" ? "학생회비" : x)).join("·") : v === true ? "이용" : v === false ? "없음" : v === null || v === undefined ? "없음" : String(v));
+const KIND: Record<string, string> = { new_project: "새 사업", update_project: "사업 변경", new_task: "새 업무", deadline: "마감 변경", update_task: "업무 변경", cancel: "업무 취소" };
+const FIELD: Record<string, string> = {
+  event_start: "행사일", venue: "장소", expected_beneficiaries: "수혜 인원", uses_external_vendor: "외부업체", funding: "재원",
+  title: "업무명", description: "설명", lead_department: "주관 국서", support_departments: "협조 국서", due_date: "마감",
+};
+const DEPT_KO: Record<string, string> = { planning: "기획국", finance: "재정국", secretariat: "사무국", promotion: "홍보국", operations: "집행국" };
+const fmt = (v: unknown) =>
+  Array.isArray(v)
+    ? v.map((x) => (x === "school" ? "교비" : x === "student_fee" ? "학생회비" : DEPT_KO[x as string] ?? x)).join("·") || "없음"
+    : v === true ? "이용" : v === false ? "없음" : v === null || v === undefined ? "없음" : DEPT_KO[String(v)] ?? String(v);
 
 /** AI 제안 검토 (8-4): 항목별 체크·수정 → 선택 승인 / 모두 거절 */
 export function ReviewBoard({ groups }: { groups: ReviewGroup[] }) {
@@ -164,10 +171,15 @@ function Row({ item: i, meetingId, checked, onToggle, edit, onEdit }: { item: Re
                 <DeptChip code={d} />
               </button>
             ))}
-            {p.assignee_hint ? <span className="text-xs text-muted">담당: {String(p.assignee_hint)}</span> : null}
+            <span className="text-xs text-muted">담당자는 승인 후 국장이 국서 공간에서 지정</span>
           </div>
         ) : null}
 
+        {i.kind === "new_project" && !(edit.event_start ?? p.event_start) ? (
+          <p className="rounded border border-warning bg-[#FFF8E6] px-2 py-1 text-xs text-warning-text" role="status" data-testid="event-date-ask">
+            회의록에 행사 당일 날짜가 없습니다. 아래 &lsquo;행사일&rsquo;에 지금 입력하거나, 비워 두고 승인한 뒤 사업 화면에서 입력하세요. 날짜가 정해지면 마감이 자동으로 계산됩니다.
+          </p>
+        ) : null}
         {i.kind === "new_project" ? (
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
             <label className="flex items-center gap-1">행사일 <input aria-label="행사일" type="date" className="h-7 rounded border border-border px-1 text-xs text-text" defaultValue={(p.event_start as string) ?? ""} onBlur={(e) => onEdit({ event_start: e.target.value || null })} /></label>
@@ -185,6 +197,17 @@ function Row({ item: i, meetingId, checked, onToggle, edit, onEdit }: { item: Re
             ))}
           </ul>
         ) : null}
+
+        {i.kind === "update_task" ? (
+          <ul className="text-xs" data-testid="update-task">
+            {Object.entries((p.changes as Record<string, unknown>) ?? {}).map(([k, v]) => (
+              <li key={k}>{FIELD[k] ?? k}: {k === "description" ? <strong>{fmt(v)}</strong> : <><span className="text-muted line-through">{fmt(i.before?.[k])}</span> → <strong>{fmt(v)}</strong></>}</li>
+            ))}
+            {p.reason ? <li className="text-muted">이유: {String(p.reason)}</li> : null}
+          </ul>
+        ) : null}
+        {i.kind === "cancel" ? <p className="text-xs text-danger">이 업무를 취소합니다{p.reason ? ` — ${String(p.reason)}` : ""}</p> : null}
+        {i.kind === "update_project" && p.reason ? <p className="text-xs text-muted">{String(p.reason)}</p> : null}
 
         {i.kind === "deadline" ? (
           <p className="text-xs">

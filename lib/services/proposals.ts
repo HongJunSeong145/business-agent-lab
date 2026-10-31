@@ -5,7 +5,7 @@ import { assertCan, type Actor } from "@/lib/auth/can";
 import { writeAudit } from "@/lib/audit/log";
 import { ServiceError } from "./invitations";
 import { insertProjectTx, parseProject } from "./projects";
-import { insertTaskTx, linkTemplateDependencies, parseTask, recomputeReadiness } from "./tasks";
+import { insertTaskTx, linkTemplateDependencies, parseTask, recomputeReadiness, syncProjectCompletion } from "./tasks";
 import { recalcProjectSchedule } from "./schedule";
 import { notifyLeaders } from "./notifications";
 
@@ -89,7 +89,7 @@ export async function decideProposals(db: Db, actor: ActorT, raw: unknown) {
     }
 
     // 1) 사업
-    const order = (k: string) => ["new_project", "update_project", "cancel", "new_task", "deadline"].indexOf(k);
+    const order = (k: string) => ["new_project", "update_project", "cancel", "update_task", "new_task", "deadline"].indexOf(k);
     const approvals = [...approve].sort((a, b) => order(byId.get(a.id)!.kind) - order(byId.get(b.id)!.kind));
     for (const a of approvals) {
       const p = byId.get(a.id)!;
@@ -103,6 +103,9 @@ export async function decideProposals(db: Db, actor: ActorT, raw: unknown) {
         });
         const proj = await insertProjectTx(tx, actor, v, { created_from_meeting_id: p.source_type === "meeting" ? p.source_id : null });
         projectIdOfKey.set(p.project_key!, proj.id);
+        if (!v.event_start) {
+          await notifyLeaders(tx, actor.termId, { type: "event_date_missing", title: `행사일 미정: ${proj.title}`, body: "회의록에 행사 당일 날짜가 없습니다. 사업 화면에서 행사일을 넣으면 마감이 계산됩니다.", link: `/projects/${proj.id}`, severity: "warn", dedupeKey: `event-date:${proj.id}` });
+        }
         touchedProjects.add(proj.id);
         await tx.proposal.update({ where: { id: p.id }, data: { payload: { ...pl, created_project_id: proj.id } as Prisma.InputJsonValue } });
         await mark(p.id, edited);
@@ -163,6 +166,47 @@ export async function decideProposals(db: Db, actor: ActorT, raw: unknown) {
         if (task.project_id) touchedProjects.add(task.project_id);
         await mark(p.id, Boolean(a.edits?.due_date));
         created.deadlines++;
+      } else if (p.kind === "update_task") {
+        // 결재 기획안 기준 업무 수정
+        const ch = { ...(p.payload as { changes: Record<string, unknown> }).changes };
+        if (a.edits?.title) ch.title = a.edits.title;
+        if (a.edits?.lead_department) ch.lead_department = a.edits.lead_department;
+        if (a.edits?.support_departments) ch.support_departments = a.edits.support_departments;
+        if (a.edits?.due_date !== undefined) ch.due_date = a.edits.due_date;
+        const task = await tx.task.findFirst({ where: { id: p.target_id!, deleted_at: null }, include: { departments: true } });
+        if (!task) throw new ServiceError("수정할 업무를 찾을 수 없습니다(삭제됨).");
+        const data: Prisma.TaskUpdateInput = {};
+        if (typeof ch.title === "string") data.title = ch.title;
+        if (typeof ch.description === "string") data.description = ch.description;
+        if ("due_date" in ch) {
+          data.due_date = ch.due_date ? new Date(`${ch.due_date}T00:00:00Z`) : null;
+          data.due_state = "confirmed";
+          data.due_reason = "결재 기획안 기준 재배정";
+        }
+        await tx.task.update({ where: { id: task.id }, data });
+        if (ch.lead_department || ch.support_departments) {
+          const leadCode = (ch.lead_department as string | undefined) ?? Object.entries(depts).find(([, id]) => id === task.departments.find((d) => d.role === "lead")?.department_id)?.[0];
+          const leadId = depts[leadCode!]!;
+          const sup = ((ch.support_departments as string[] | undefined) ?? task.departments.filter((d) => d.role === "support").map((d) => Object.entries(depts).find(([, id]) => id === d.department_id)?.[0]).filter(Boolean) as string[])
+            .map((c) => depts[c]!)
+            .filter((id) => id && id !== leadId);
+          await tx.taskDepartment.deleteMany({ where: { task_id: task.id } });
+          await tx.taskDepartment.createMany({ data: [{ task_id: task.id, department_id: leadId, role: "lead" }, ...[...new Set(sup)].map((d) => ({ task_id: task.id, department_id: d, role: "support" }))] });
+        }
+        await writeAudit(tx, { actorId: actor.userId, action: "task.update", entityType: "task", entityId: task.id, diff: { before: p.before_snapshot, after: ch, via_proposal: p.id } });
+        if (task.project_id) touchedProjects.add(task.project_id);
+        await mark(p.id, edited);
+        created.updates++;
+      } else if (p.kind === "cancel") {
+        const task = await tx.task.findFirst({ where: { id: p.target_id!, deleted_at: null } });
+        if (!task) throw new ServiceError("취소할 업무를 찾을 수 없습니다(삭제됨).");
+        if (!task.is_completed && task.status !== "cancelled") {
+          await tx.task.update({ where: { id: task.id }, data: { status: "cancelled" } });
+          await writeAudit(tx, { actorId: actor.userId, action: "task.update", entityType: "task", entityId: task.id, diff: { before: { status: task.status }, after: { status: "cancelled" }, reason: (p.payload as { reason?: string }).reason, via_proposal: p.id } });
+        }
+        if (task.project_id) touchedProjects.add(task.project_id);
+        await mark(p.id, false);
+        created.updates++;
       } else {
         throw new ServiceError("지원하지 않는 제안 종류입니다.");
       }
@@ -188,6 +232,7 @@ export async function decideProposals(db: Db, actor: ActorT, raw: unknown) {
     }
     const all = await tx.task.findMany({ where: { project_id: { in: [...touchedProjects] }, deleted_at: null }, select: { id: true } });
     await recomputeReadiness(tx, actor.termId, { taskIds: all.map((t) => t.id) });
+    for (const pid of touchedProjects) await syncProjectCompletion(tx, actor.termId, pid);
 
     // 4) 처리 끝난 회의록은 reviewed
     const meetings = [...new Set(props.filter((p) => p.source_type === "meeting" && p.source_id).map((p) => p.source_id!))];

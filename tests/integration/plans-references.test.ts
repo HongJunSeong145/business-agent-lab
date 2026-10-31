@@ -58,7 +58,7 @@ beforeEach(async () => {
 });
 
 const FIELDS = {
-  title: "기말고사 간식 나눔", datetime: "2026-12-09 12:00", venue: "데모관 로비", budget: 400000, host: "학생회", organizer: "기획국",
+  title: "기말고사 간식 나눔", event_date: "2026-12-09", datetime: "2026-12-09 12:00", venue: "데모관 로비", budget: 400000, host: "학생회", organizer: "기획국",
   purpose: "시험 응원", content: "간식 80인분 배부", timetable: [{ time: "12:00", item: "배부 시작" }], budget_scenarios: [],
 };
 

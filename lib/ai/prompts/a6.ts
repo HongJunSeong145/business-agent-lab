@@ -1,6 +1,6 @@
 import { COUNCIL_RULES } from "./common";
 
-export const A6_PROMPT_VERSION = "a6-v1";
+export const A6_PROMPT_VERSION = "a6-v2";
 
 const ISOLATION = `
 [보안 규칙 — 반드시 지킬 것]
@@ -16,6 +16,7 @@ export type A6PromptInput = {
   criteriaSource: "task" | "default";
   project: { title: string; event_start: string | null; venue: string | null; funding: string[] } | null;
   deliverable: { title: string; version_no: number; file_name: string | null; note: string | null; kind: "image" | "text" | "link" };
+  plan: { versionNo: number; isDraft: boolean } | null;
   previous: { version_no: number; score: number; missing_items: string[] } | null;
 };
 
@@ -38,6 +39,9 @@ ${i.criteria.map((c, n) => `${n + 1}. ${c}`).join("\n")}
 - 제목: ${i.deliverable.title}
 - 파일: ${i.deliverable.file_name ?? "-"} (${i.deliverable.kind === "image" ? "첨부 이미지를 직접 보고 평가" : i.deliverable.kind === "text" ? "<document> 의 추출 텍스트로 평가 — 서식·디자인은 알 수 없음" : "링크만 있음"})
 - 작업자 메모: ${i.deliverable.note ?? "없음"}
+
+[기획안]
+${i.plan ? `<document> 의 기획안 v${i.plan.versionNo}${i.plan.isDraft ? "(초안 — 결재 전이라 바뀔 수 있음)" : "(결재본 — 가장 중요한 기준)"}. 작업물의 행사명·날짜·장소·예산·참여 방법이 기획안과 다르면 반드시 지적한다.` : "없음 — 사업 정보로만 판단"}
 
 [이전 평가]
 ${i.previous ? `- 버전 ${i.previous.version_no}: ${i.previous.score}점, 부족 항목: ${i.previous.missing_items.join(", ") || "없음"}` : "없음(첫 평가)"}

@@ -220,6 +220,7 @@ export async function listDeliverables(db: Db, actor: ActorT, taskId: string, av
       id: d.id,
       title: d.title,
       currentVersionId: d.current_version_id,
+      finalVersionId: d.final_version_id,
       canDelete: isLeader(actor) || d.versions.at(-1)?.uploaded_by === actor.userId,
       versions: d.versions.map((v) => {
         const job = jobs.find((j) => (j.payload as { versionId?: string }).versionId === v.id);
@@ -260,4 +261,60 @@ export async function listDeliverables(db: Db, actor: ActorT, taskId: string, av
       }),
     })),
   };
+}
+
+/** 작업물 이름 바꾸기 / 버전 메모 고치기 / 최종본 지정·해제 (올릴 수 있는 사람) */
+export async function updateDeliverable(db: Db, actor: ActorT, deliverableId: string, raw: unknown) {
+  const v = z
+    .object({
+      title: z.string().trim().min(1, "이름을 입력하세요.").max(150).optional(),
+      finalVersionId: z.string().uuid().nullable().optional(),
+      versionNote: z.object({ versionId: z.string().uuid(), note: z.string().trim().max(2000) }).optional(),
+    })
+    .safeParse(raw);
+  if (!v.success) throw new ServiceError(v.error.issues[0]?.message ?? "입력값 오류");
+  const d = await db.deliverable.findFirst({ where: { id: deliverableId, deleted_at: null }, include: { versions: { where: { deleted_at: null }, select: { id: true } } } });
+  if (!d) throw new ServiceError("작업물을 찾을 수 없습니다.", 404);
+  const task = await loadTask(db, actor.termId, d.task_id);
+  assertCan(actor, { type: "deliverable.upload", task: taskResource(task) });
+  const ids = new Set(d.versions.map((x) => x.id));
+  if (v.data.finalVersionId && !ids.has(v.data.finalVersionId)) throw new ServiceError("이 작업물의 버전이 아닙니다.");
+  if (v.data.versionNote && !ids.has(v.data.versionNote.versionId)) throw new ServiceError("이 작업물의 버전이 아닙니다.");
+  await db.$transaction(async (tx) => {
+    await tx.deliverable.update({
+      where: { id: d.id },
+      data: { ...(v.data.title ? { title: v.data.title } : {}), ...(v.data.finalVersionId !== undefined ? { final_version_id: v.data.finalVersionId } : {}) },
+    });
+    if (v.data.versionNote) await tx.deliverableVersion.update({ where: { id: v.data.versionNote.versionId }, data: { note: v.data.versionNote.note || null } });
+    await writeAudit(tx, { actorId: actor.userId, action: "deliverable.update", entityType: "task", entityId: d.task_id, diff: { deliverableId: d.id, ...v.data } });
+  });
+}
+
+/** 사업 작업물 보관함: 국서(주관)별로 작업물의 최종본(없으면 최신 버전) — 모든 구성원 열람 */
+export async function projectArchive(db: Db, actor: ActorT, projectId: string) {
+  const p = await db.project.findFirst({ where: { id: projectId, term_id: actor.termId, deleted_at: null }, select: { id: true, status: true } });
+  if (!p) throw new ServiceError("사업을 찾을 수 없습니다.", 404);
+  const ds = await db.deliverable.findMany({
+    where: { deleted_at: null, task: { project_id: p.id, deleted_at: null } },
+    include: {
+      task: { select: { id: true, title: true, is_completed: true, departments: { where: { role: "lead" }, include: { department: { select: { code: true, name_ko: true, display_order: true } } } } } },
+      versions: { where: { deleted_at: null }, orderBy: { version_no: "desc" } },
+    },
+    orderBy: { created_at: "asc" },
+  });
+  const groups = new Map<string, { code: string; name: string; order: number; items: unknown[] }>();
+  for (const d of ds) {
+    const dept = d.task.departments[0]?.department;
+    if (!dept) continue;
+    const v = d.versions.find((x) => x.id === d.final_version_id) ?? d.versions[0];
+    if (!v) continue;
+    if (!groups.has(dept.code)) groups.set(dept.code, { code: dept.code, name: dept.name_ko, order: dept.display_order, items: [] });
+    groups.get(dept.code)!.items.push({
+      deliverableId: d.id, title: d.title, taskId: d.task.id, taskTitle: d.task.title, taskDone: d.task.is_completed,
+      isFinal: d.final_version_id === v.id, versionNo: v.version_no, versions: d.versions.length, fileName: v.original_name, externalUrl: v.external_url,
+      preview: v.external_url ? "link" : previewKind(v.mime), url: v.storage_key ? signedFileUrl(v.storage_key) : null, downloadUrl: v.storage_key ? signedFileUrl(v.storage_key, { download: true }) : null,
+      at: v.created_at,
+    });
+  }
+  return { status: p.status, groups: [...groups.values()].sort((a, b) => a.order - b.order) };
 }

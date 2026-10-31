@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Db } from "@/lib/db";
-import type { Prisma } from "@/lib/generated/prisma/client";
+import { Prisma } from "@/lib/generated/prisma/client";
 import { assertCan, can, isLeader, type Actor } from "@/lib/auth/can";
 import { writeAudit } from "@/lib/audit/log";
 import { detectMinutesKind, KIND_MIME, UploadRejectedError } from "@/lib/files/detect";
@@ -8,7 +8,7 @@ import { newStorageKey, type Storage } from "@/lib/storage";
 import { signedFileUrl } from "@/lib/storage/signed-url";
 import { dateColumnToString } from "@/lib/utils";
 import { notifyLeaders } from "./notifications";
-import { recomputeReadiness } from "./tasks";
+import { recomputeReadiness, syncProjectCompletion } from "./tasks";
 import { recalcProjectSchedule } from "./schedule";
 import { sanitizeFileName } from "./meetings";
 import { ServiceError } from "./invitations";
@@ -30,6 +30,8 @@ export const PLAN_STATUS_LABEL: Record<string, string> = { draft: "작성 중", 
 const text = (max: number) => z.string().trim().max(max).default("");
 export const planFieldsSchema = z.object({
   title: text(150),
+  /** 행사 당일(달력 선택) — 결재되면 사업 행사일·마감 계산의 기준 */
+  event_date: z.union([z.literal(""), z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "행사 날짜 형식 오류")]).default(""),
   datetime: text(200),
   venue: text(200),
   budget: z.union([z.null(), z.coerce.number().int().min(0, "예산액은 0 이상").max(1_000_000_000)]).default(null),
@@ -46,6 +48,7 @@ export type PlanFields = z.output<typeof planFieldsSchema>;
 export function missingRequired(f: PlanFields): string[] {
   const miss: string[] = [];
   if (!f.title) miss.push("행사명");
+  if (!f.event_date) miss.push("행사 날짜");
   if (!f.datetime) miss.push("일시");
   if (!f.venue) miss.push("장소");
   if (f.budget === null) miss.push("예산액");
@@ -77,6 +80,7 @@ export async function getPlan(db: Db, actor: ActorT, projectId: string) {
   const name = (id: string | null) => users.find((u) => u.id === id)?.display_name ?? null;
   const prefill: PlanFields = planFieldsSchema.parse({
     title: p.title,
+    event_date: p.event_start ? dateColumnToString(p.event_start) : "",
     datetime: p.event_start ? `${dateColumnToString(p.event_start)}${p.event_end && +p.event_end !== +p.event_start ? ` ~ ${dateColumnToString(p.event_end)}` : ""}` : "",
     venue: p.venue ?? "",
     budget: p.funding_sources.length ? p.funding_sources.reduce((n, f) => n + Number(f.amount_planned), 0) : null,
@@ -84,7 +88,18 @@ export async function getPlan(db: Db, actor: ActorT, projectId: string) {
     organizer: p.organizer ?? "",
   });
   const approved = plan?.versions.find((v) => v.approved_at);
+  // 기획국 '기획안 초안 작성' 업무의 AI 레퍼런스 기획안(양식으로 가져오기)
+  const draftTask = await db.task.findFirst({ where: { project_id: p.id, template_key: "PLN_DRAFT", deleted_at: null }, select: { id: true } });
+  const aiDrafts = draftTask
+    ? await db.referenceItem.findMany({ where: { task_id: draftTask.id, deleted_at: null, origin: "ai_generated", NOT: { points: { equals: Prisma.DbNull } } }, orderBy: { created_at: "desc" }, take: 3 })
+    : [];
+  const pendingDraftReq = draftTask ? await db.referenceRequest.count({ where: { task_id: draftTask.id, status: { in: ["queued", "running"] } } }) : 0;
   return {
+    draftTaskId: draftTask?.id ?? null,
+    aiPlanDrafts: aiDrafts
+      .map((r) => ({ id: r.id, at: r.created_at, plan: (r.points as { plan?: unknown } | null)?.plan ?? null }))
+      .filter((r) => r.plan),
+    draftRequestRunning: pendingDraftReq > 0,
     projectId: p.id,
     status: plan?.status ?? null,
     currentVersionId: plan?.current_version_id ?? null,
@@ -224,6 +239,7 @@ export async function approvePlan(db: Db, actor: ActorT, projectId: string) {
     const before = await tx.task.findMany({ where: { project_id: project.id, deleted_at: null }, select: { id: true, status: true } });
     await recomputeReadiness(tx, actor.termId, { dependentsOf: approvalIds });
     if (planTasks.length) await recalcProjectSchedule(tx, actor.termId, project.id, "proposed");
+    await syncProjectCompletion(tx, actor.termId, project.id);
     const after = await tx.task.findMany({
       where: { project_id: project.id, deleted_at: null },
       select: { id: true, title: true, status: true, started_on_draft_plan: true, assignees: { select: { user_id: true } }, dependencies: { select: { depends_on_task_id: true } } },
@@ -247,7 +263,9 @@ export async function approvePlan(db: Db, actor: ActorT, projectId: string) {
     const author = current.author_id !== actor.userId ? current.author_id : null;
     if (author) await tx.notification.create({ data: { user_id: author, type: "plan_approved", title: `기획안 결재 완료: ${project.title} v${current.version_no}`, link: `/projects/${project.id}#plan`, dedupe_key: `plan-approved-author:${current.id}` } });
     await writeAudit(tx, { actorId: actor.userId, action: "plan.approve", entityType: "project", entityId: project.id, diff: { version: current.version_no, unblocked: unblocked.map((t) => t.id), completed: planTasks.map((t) => t.id) } });
-    return { versionNo: current.version_no, unblocked: unblocked.map((t) => ({ id: t.id, title: t.title })), completed: planTasks.map((t) => t.id) };
+    // 결재 기획안 기준 재배정 제안(승인 요청) — 코드(행사일·마감) + AI(업무 수정·추가·취소)
+    const rebase = await tx.aiJob.create({ data: { type: "plan_rebase", payload: { projectId: project.id, planVersionId: current.id, approverId: actor.userId }, idempotency_key: `plan_rebase:${current.id}` } });
+    return { versionNo: current.version_no, unblocked: unblocked.map((t) => ({ id: t.id, title: t.title })), completed: planTasks.map((t) => t.id), rebaseJobId: rebase.id };
   });
 }
 
@@ -278,9 +296,27 @@ export async function planForContext(db: Db | Tx, projectId: string) {
 
 export function planToText(f: PlanFields): string {
   return [
-    `행사명: ${f.title}`, `일시: ${f.datetime}`, `장소: ${f.venue}`, `예산액: ${f.budget === null ? "" : `${f.budget.toLocaleString()}원`}`,
+    `행사명: ${f.title}`, `행사 날짜: ${f.event_date || "미정"}`, `일시: ${f.datetime}`, `장소: ${f.venue}`, `예산액: ${f.budget === null ? "" : `${f.budget.toLocaleString()}원`}`,
     `주최: ${f.host}`, `주관: ${f.organizer}`, `배경 및 목적: ${f.purpose}`, `행사 내용: ${f.content}`,
     f.timetable.length ? `타임테이블:\n${f.timetable.map((t) => `- ${t.time} ${t.item}`).join("\n")}` : "",
     f.budget_scenarios.length ? `예산 시나리오:\n${f.budget_scenarios.map((b) => `- ${b.name}: ${b.amount.toLocaleString()}원 ${b.note}`).join("\n")}` : "",
   ].filter(Boolean).join("\n");
+}
+
+/**
+ * 기획국용 '레퍼런스 기획안' 의뢰: 회의록 기반으로 참고 사이트 + AI 레퍼런스 기획안을 만든다.
+ * 결과는 기획국 공간의 '기획안 초안 작성' 업무 › 레퍼런스 탭과 기획안 화면에 함께 보인다(업무가 없으면 만든다).
+ */
+export async function requestPlanReferences(db: Db, actor: ActorT, projectId: string, raw: unknown) {
+  if (!canEdit(actor)) throw new ServiceError("기획안 레퍼런스는 기획국과 회장·국장만 의뢰할 수 있습니다.", 403);
+  const p = await loadProject(db, actor.termId, projectId);
+  let task = await db.task.findFirst({ where: { project_id: p.id, template_key: "PLN_DRAFT", deleted_at: null }, select: { id: true } });
+  if (!task) {
+    const planning = await db.department.findFirstOrThrow({ where: { term_id: actor.termId, code: "planning" } });
+    const { insertTaskTx, parseTask } = await import("./tasks");
+    task = await db.$transaction((tx) => insertTaskTx(tx, actor, parseTask({ title: "기획안 초안 작성", project_id: p.id, lead_department_id: planning.id }), { template_key: "PLN_DRAFT" }));
+  }
+  const { requestReferences } = await import("./references");
+  const instruction = typeof (raw as { instruction?: unknown } | null)?.instruction === "string" ? (raw as { instruction: string }).instruction : "";
+  return { taskId: task.id, ...(await requestReferences(db, actor, task.id, { instruction: instruction || "회의록을 바탕으로 이 행사의 기획안을 쓸 때 참고할 사례 사이트와 레퍼런스 기획안을 만들어 주세요.", useMinutes: true, usePlan: true })) };
 }

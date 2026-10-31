@@ -1,6 +1,6 @@
 import { COUNCIL_RULES } from "./common";
 
-export const A5_PROMPT_VERSION = "a5-v1";
+export const A5_PROMPT_VERSION = "a5-v2";
 
 const ISOLATION = `
 [보안 규칙 — 반드시 지킬 것]
@@ -67,6 +67,7 @@ ${i.searchFailed ? "[주의] 외부 레퍼런스 검색에 실패했다. referen
 2. examples: 국서 형식 예시안 1~3개. 형식: ${DEPT_EXAMPLE_FORMAT[i.task.deptCode] ?? "업무에 맞는 초안(markdown)"}
 3. 예시안은 기획안·회의록의 사실(일시·장소·예산·인원)을 그대로 쓰고, 모르는 값은 [ ] 로 비워 둔다. 지어내지 않는다.${i.plan?.isDraft ? " 기획안이 초안이므로 예시안 첫 줄에 '※ 기획안 초안 기준'을 적는다." : ""}
 4. 외부로 보내는 문안(이메일·공문·제휴 요청)은 external_send=true.
-5. notes: 사용한 자료와 한계(검색 실패, 확인 필요한 값 등)를 한두 문장으로.
-6. 한국어로 쓴다.`;
+5. plan_draft: ${i.task.deptCode === "planning" ? "기획국 업무이므로 반드시 채운다 — 회의록·검색 사례를 근거로 한 '레퍼런스 기획안'(행사명·행사 날짜·일시·장소·예산·주최·주관·배경 및 목적·행사 내용·타임테이블). 모르는 값은 빈 문자열 또는 null, 지어내지 않는다." : "기획국 업무가 아니므로 null."}
+6. notes: 사용한 자료와 한계(검색 실패, 확인 필요한 값 등)를 한두 문장으로.
+7. 한국어로 쓴다.`;
 }

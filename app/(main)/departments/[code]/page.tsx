@@ -17,6 +17,7 @@ import { EmptyState } from "@/components/common/empty-state";
 import { ProgressBar } from "@/components/dept/progress-bar";
 import { TaskFormDialog } from "@/components/tasks/task-form-dialog";
 import { TaskRow } from "@/components/tasks/task-row";
+import { BulkProvider } from "@/components/tasks/bulk";
 
 export const dynamic = "force-dynamic";
 
@@ -97,6 +98,7 @@ export default async function DepartmentPage({ params, searchParams }: { params:
         {filtered ? <a href={`/departments/${dc}`} className="text-sm underline">필터 해제</a> : null}
       </form>
 
+      <BulkProvider canManage={can(user, { type: "task.assign" })}>
       {ordered.length === 0 ? (
         <EmptyState title={filtered ? "조건에 맞는 업무가 없습니다" : "아직 업무가 없습니다"} description="회의록 AI 제안(Phase 5) 또는 '업무 추가'로 업무를 만들 수 있습니다." />
       ) : (
@@ -120,6 +122,7 @@ export default async function DepartmentPage({ params, searchParams }: { params:
           );
         })
       )}
+      </BulkProvider>
     </div>
   );
 }

@@ -29,7 +29,7 @@ export async function loadDashboard(termId: string) {
     prisma.meeting.findMany({
       where: { term_id: termId, deleted_at: null },
       orderBy: [{ meeting_date: "desc" }, { created_at: "desc" }],
-      take: 7,
+      take: 5,
     }),
     prisma.department.findMany({ where: { term_id: termId }, orderBy: { display_order: "asc" } }),
     prisma.task.findMany({

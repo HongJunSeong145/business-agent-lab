@@ -160,7 +160,7 @@ export function mockA2(ctx: A2MockContext): A2Output {
       lead_department: a.department ?? guessDept(a.what) ?? "secretariat",
       support_departments: [],
       template_key: tk,
-      assignee_hint: a.who,
+      assignee_hint: null,
       due_date: a.due_date,
       inferred: false,
       inference_reason: null,
@@ -229,6 +229,10 @@ export function mockA5(ctx: A5MockContext): A5Output {
   return {
     references: ctx.sources.map((s, i) => ({ source_id: `S${i + 1}`, summary: `${s.title} 요약`, benchmark_points: ["구성 참고"], relevance: "같은 유형의 행사" })),
     examples: byDept[ctx.task.deptCode] ?? [{ title: "예시안", kind: "초안", format: "markdown", content: `${head}${facts}`, external_send: false }],
+    plan_draft:
+      ctx.task.deptCode === "planning"
+        ? { title: f?.title ?? ctx.task.title, event_date: null, datetime: f?.datetime ?? "", venue: f?.venue ?? "", budget: null, host: "학생회", organizer: "기획국", purpose: "mock: 행사 목적", content: "mock: 행사 내용", timetable: [{ time: "12:00", item: "시작" }] }
+        : null,
     notes: ctx.searchFailed ? "외부 레퍼런스 검색 실패 — 내부 자료만 사용" : "mock 예시안",
   };
 }
@@ -238,6 +242,17 @@ export const MOCK_SEARCH_HANDLERS: Record<string, MockSearchHandler> = { a5_sear
 export const MOCK_HANDLERS: Record<string, MockHandler> = {
   a5: (req: CompleteRequest) => mockA5(req.mockContext as A5MockContext),
   a6: (req: CompleteRequest) => mockA6(req.mockContext as A6MockContext),
+  a2p: (req: CompleteRequest) => {
+    // 결정적: 타임테이블에 '리허설'이 있고 같은 업무가 없으면 집행국 업무 추가, 기획안 장소가 업무명에 없으면 변경 없음
+    const ctx = req.mockContext as { plan: { timetable: { time: string; item: string }[] }; tasks: { ref: string; title: string }[] };
+    const reh = ctx.plan.timetable.find((t) => /리허설/.test(t.item));
+    return {
+      add_tasks: reh && !ctx.tasks.some((t) => /리허설/.test(t.title)) ? [{ title: "현장 리허설 준비", description: `기획안 타임테이블: ${reh.time} ${reh.item}`, lead_department: "operations", support_departments: ["planning"], template_key: null, due_date: null, reason: "기획안 타임테이블에 리허설" }] : [],
+      update_tasks: [],
+      cancel_tasks: [],
+      notes: "mock: 결재 기획안 점검",
+    };
+  },
   a7: (req: CompleteRequest) => {
     const s = (req.mockContext as { summary: { overdue: number; critical: number; evidence: number } }).summary;
     return { summary: `mock 노티스: 초과 ${s.overdue}건, 긴급 ${s.critical}건, 증빙 누락 ${s.evidence}건을 먼저 챙기세요.`, top_actions: ["초과 업무 담당자 확인"] };

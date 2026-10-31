@@ -37,7 +37,7 @@ type Version = {
 type Data = {
   canUpload: boolean;
   aiAvailable: boolean;
-  deliverables: { id: string; title: string; currentVersionId: string | null; canDelete: boolean; versions: Version[] }[];
+  deliverables: { id: string; title: string; currentVersionId: string | null; finalVersionId: string | null; canDelete: boolean; versions: Version[] }[];
 };
 
 const VERDICT: Record<Verdict, { label: string; cls: string }> = {
@@ -221,7 +221,28 @@ function DeliverableCard({ d, canUpload, aiAvailable, onChanged }: { d: Data["de
   return (
     <section className="space-y-3 rounded-lg border border-border p-3" aria-label={`작업물 ${d.title}`} data-testid="deliverable">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="truncate text-sm font-semibold">{d.title}</h3>
+        {canUpload ? (
+          <input
+            aria-label={`작업물 이름: ${d.title}`}
+            defaultValue={d.title}
+            key={d.title}
+            className="min-w-0 flex-1 truncate rounded border border-transparent bg-transparent px-1 text-sm font-semibold hover:border-border"
+            onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+            onBlur={async (e) => {
+              const t = e.target.value.trim();
+              if (!t || t === d.title) return;
+              try {
+                await api(`/api/deliverables/${d.id}`, { method: "PATCH", body: { title: t } });
+                toast("이름을 바꿨습니다.");
+                await onChanged();
+              } catch (err) {
+                toast((err as Error).message, { tone: "error" });
+              }
+            }}
+          />
+        ) : (
+          <h3 className="truncate text-sm font-semibold">{d.title}</h3>
+        )}
         {d.canDelete ? (
           <button
             className="text-muted hover:text-danger"
@@ -259,13 +280,42 @@ function DeliverableCard({ d, canUpload, aiAvailable, onChanged }: { d: Data["de
               <span className="min-w-0 flex-1 truncate">{x.note ?? x.fileName ?? x.externalUrl}</span>
               <span className="text-muted">{x.uploadedBy} · {time(x.at)}</span>
               {x.evaluation ? <span className="tabular rounded border border-border px-1">{x.evaluation.score}%</span> : null}
+              {d.finalVersionId === x.id ? <span className="rounded border border-success px-1 text-success" data-testid="final-badge">최종본</span> : null}
             </button>
           </li>
         ))}
       </ol>
+      {v && canUpload ? (
+        <div className="flex flex-wrap gap-3 text-xs">
+          {d.finalVersionId === v.id ? (
+            <button className="underline" onClick={() => void patchD(d.id, { finalVersionId: null }, "최종본 지정을 풀었습니다.", onChanged)}>최종본 해제</button>
+          ) : (
+            <button className="underline" onClick={() => void patchD(d.id, { finalVersionId: v.id }, `v${v.versionNo}을 최종본으로 지정했습니다.`, onChanged)}>v{v.versionNo}을 최종본으로 지정</button>
+          )}
+          <button
+            className="underline"
+            onClick={() => {
+              const note = window.prompt(`v${v.versionNo} 메모`, v.note ?? "");
+              if (note !== null) void patchD(d.id, { versionNote: { versionId: v.id, note } }, "메모를 고쳤습니다.", onChanged);
+            }}
+          >
+            메모 고치기
+          </button>
+        </div>
+      ) : null}
       {v ? <VersionView v={v} canUpload={canUpload} aiAvailable={aiAvailable} onChanged={onChanged} /> : null}
     </section>
   );
+}
+
+async function patchD(id: string, body: unknown, ok: string, onChanged: () => Promise<void>) {
+  try {
+    await api(`/api/deliverables/${id}`, { method: "PATCH", body });
+    toast(ok);
+    await onChanged();
+  } catch (e) {
+    toast((e as Error).message, { tone: "error" });
+  }
 }
 
 function VersionView({ v, canUpload, aiAvailable, onChanged }: { v: Version; canUpload: boolean; aiAvailable: boolean; onChanged: () => Promise<void> }) {

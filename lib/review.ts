@@ -26,6 +26,8 @@ export type ReviewGroup = {
 export async function loadReview(termId: string): Promise<ReviewGroup[]> {
   const props = await prisma.proposal.findMany({ where: { term_id: termId, status: "pending" }, orderBy: { created_at: "asc" } });
   const meetingIds = [...new Set(props.filter((p) => p.source_type === "meeting" && p.source_id).map((p) => p.source_id!))];
+  const planIds = [...new Set(props.filter((p) => p.source_type === "plan" && p.source_id).map((p) => p.source_id!))];
+  const planVersions = await prisma.planVersion.findMany({ where: { id: { in: planIds } }, select: { id: true, version_no: true, plan: { select: { project: { select: { title: true } } } } } });
   const [meetings, projects, tasks] = await Promise.all([
     prisma.meeting.findMany({ where: { id: { in: meetingIds } }, select: { id: true, title: true, meeting_date: true } }),
     prisma.project.findMany({ where: { term_id: termId, id: { in: props.map((p) => p.target_id ?? p.project_key ?? "").filter((x) => /^[0-9a-f-]{36}$/.test(x)) } }, select: { id: true, title: true } }),
@@ -33,10 +35,16 @@ export async function loadReview(termId: string): Promise<ReviewGroup[]> {
   ]);
   const groups = new Map<string, ReviewGroup>();
   for (const p of props) {
-    const gid = p.source_type === "meeting" ? p.source_id! : "manual";
+    const gid = p.source_type === "meeting" || p.source_type === "plan" ? p.source_id! : "manual";
     if (!groups.has(gid)) {
       const m = meetings.find((x) => x.id === gid);
-      groups.set(gid, { id: gid, label: m ? `${m.title} (${m.meeting_date.toISOString().slice(0, 10)})` : "직접 요청 — 마감 변경", meetingId: m?.id ?? null, projects: [], others: [] });
+      const pv = planVersions.find((x) => x.id === gid);
+      const label = m
+        ? `${m.title} (${m.meeting_date.toISOString().slice(0, 10)})`
+        : pv
+          ? `결재 기획안 기준 재배정 — ${pv.plan.project.title} 기획안 v${pv.version_no} (최종 기획안이 기준입니다)`
+          : "직접 요청 — 마감 변경";
+      groups.set(gid, { id: gid, label, meetingId: m?.id ?? null, projects: [], others: [] });
     }
     const g = groups.get(gid)!;
     const payload = p.payload as Record<string, unknown>;
