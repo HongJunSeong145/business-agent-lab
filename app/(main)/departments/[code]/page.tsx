@@ -20,7 +20,7 @@ import { TaskRow } from "@/components/tasks/task-row";
 
 export const dynamic = "force-dynamic";
 
-type SP = { assignee?: string; status?: string; from?: string; to?: string; project?: string };
+type SP = { assignee?: string; status?: string; from?: string; to?: string; in_project?: string };
 
 /** 국서 업무 공간 (8-6): 사업별 아코디언(진행 중 펼침, 완료·취소 접힘) + 사업 외 업무 */
 export default async function DepartmentPage({ params, searchParams }: { params: Promise<{ code: string }>; searchParams: Promise<SP> }) {
@@ -38,7 +38,7 @@ export default async function DepartmentPage({ params, searchParams }: { params:
     ...(sp.assignee ? { assignees: { some: { user_id: sp.assignee } } } : {}),
     ...(sp.status && sp.status in TASK_STATUS_LABEL ? { status: sp.status } : {}),
     ...(sp.from || sp.to ? { due_date: { gte: day(sp.from), lte: day(sp.to) } } : {}),
-    ...(sp.project ? { project_id: sp.project } : {}),
+    ...(sp.in_project ? { project_id: sp.in_project } : {}),
   };
   const [rows, members, allLead] = await Promise.all([
     loadTaskRows(user, where),
@@ -62,7 +62,7 @@ export default async function DepartmentPage({ params, searchParams }: { params:
     return rank(a) - rank(b);
   });
   const today = todayKst();
-  const filtered = Boolean(sp.assignee || sp.status || sp.from || sp.to || sp.project);
+  const filtered = Boolean(sp.assignee || sp.status || sp.from || sp.to || sp.in_project);
 
   return (
     <div className="space-y-4">
@@ -76,13 +76,13 @@ export default async function DepartmentPage({ params, searchParams }: { params:
             </div>
           </div>
           {can(user, { type: "task.create" }) ? (
-            <TaskFormDialog defaultLeadDepartmentId={dept.id} defaultProjectId={sp.project} trigger={<Button><Plus className="h-4 w-4" /> 업무 추가</Button>} />
+            <TaskFormDialog defaultLeadDepartmentId={dept.id} defaultProjectId={sp.in_project} trigger={<Button><Plus className="h-4 w-4" /> 업무 추가</Button>} />
           ) : null}
         </div>
       </header>
 
       <form method="get" className="flex flex-wrap items-center gap-2" aria-label="업무 필터">
-        {sp.project ? <input type="hidden" name="project" value={sp.project} /> : null}
+        {sp.in_project ? <input type="hidden" name="in_project" value={sp.in_project} /> : null}
         <Select name="assignee" defaultValue={sp.assignee ?? ""} className="w-40" aria-label="담당자">
           <option value="">모든 담당자</option>
           {members.map((m) => <option key={m.user.id} value={m.user.id}>{m.user.display_name}</option>)}

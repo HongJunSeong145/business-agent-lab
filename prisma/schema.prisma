@@ -602,6 +602,9 @@ model PlanVersion {
   version_no  Int
   fields      Json
   file_key    String?
+  file_name   String?
+  file_mime   String?
+  note        String?
   author_id   String    @db.Uuid
   approved_by String?   @db.Uuid
   approved_at DateTime? @db.Timestamptz(6)
@@ -630,6 +633,15 @@ model ReferenceItem {
   origin                   String
   request_id               String?  @db.Uuid
   needs_review_before_send Boolean  @default(false)
+  /// AI 예시안 본문(markdown/html/svg) — 사용자 링크·파일은 비어 있음
+  content                  String?
+  content_format           String?
+  /// 벤치마킹 포인트 등 부가 정보(JSON 배열)
+  points                   Json?
+  original_name            String?
+  mime                     String?
+  created_by               String?  @db.Uuid
+  deleted_at               DateTime? @db.Timestamptz(6)
   created_at               DateTime @default(now()) @db.Timestamptz(6)
   updated_at               DateTime @updatedAt @db.Timestamptz(6)
 
@@ -638,6 +650,7 @@ model ReferenceItem {
   department Department?       @relation(fields: [department_id], references: [id], onDelete: SetNull)
   request    ReferenceRequest? @relation(fields: [request_id], references: [id], onDelete: SetNull)
 
+  @@index([task_id])
   @@map("reference_items")
 }
 

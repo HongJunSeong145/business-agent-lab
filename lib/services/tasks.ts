@@ -119,6 +119,20 @@ async function assertNoCycle(tx: Tx, termId: string, taskId: string, dependsOn: 
   }
 }
 
+const PLAN_TEMPLATE_KEYS = new Set(["PLN_DRAFT", "PLN_APPROVAL"]);
+
+/** 기획안 초안이 저장된 사업 (기획안 업무를 선행으로 둔 업무의 '초안 있음' 판단 — D7) */
+export async function projectsWithPlanDraft(db: Db | Tx, projectIds: (string | null)[]): Promise<Set<string>> {
+  const ids = [...new Set(projectIds.filter(Boolean) as string[])];
+  if (!ids.length) return new Set();
+  const plans = await db.plan.findMany({ where: { project_id: { in: ids }, versions: { some: {} } }, select: { project_id: true } });
+  return new Set(plans.map((p) => p.project_id));
+}
+
+export function hasPlanDraft(pred: { template_key: string | null; project_id: string | null }, drafts: Set<string>): boolean {
+  return !!pred.template_key && PLAN_TEMPLATE_KEYS.has(pred.template_key) && !!pred.project_id && drafts.has(pred.project_id);
+}
+
 /**
  * blocked/todo 자동 계산 (D7). 대상: 지정한 업무 + (지정한 업무에 의존하는 후속 업무).
  * 사용자가 진행 중 이후로 옮긴 업무는 바꾸지 않는다.
@@ -134,13 +148,14 @@ export async function recomputeReadiness(tx: Tx, termId: string, scope: { taskId
     where: { id: { in: [...ids] }, ...termTaskWhere(termId) },
     include: { dependencies: { include: { depends_on: true } } },
   });
+  const drafts = await projectsWithPlanDraft(tx, tasks.flatMap((t) => t.dependencies.map((d) => d.depends_on.project_id)));
   for (const t of tasks) {
     const r = taskReadiness(
       t.dependencies
         .filter((d) => d.depends_on.deleted_at === null)
         .map((d) => ({
           type: d.type as DependencyType,
-          predecessor: { title: d.depends_on.title, status: d.depends_on.status, is_completed: d.depends_on.is_completed, effective_progress: effectiveProgress(d.depends_on) },
+          predecessor: { title: d.depends_on.title, status: d.depends_on.status, is_completed: d.depends_on.is_completed, effective_progress: effectiveProgress(d.depends_on), has_draft: hasPlanDraft(d.depends_on, drafts) },
         })),
       t.allow_draft_start,
     );
@@ -429,7 +444,7 @@ export async function getTaskDetail(db: Db, actor: ActorT, id: string) {
       project: { select: { id: true, title: true, status: true } },
       departments: { include: { department: true } },
       assignees: { include: { user: { select: { id: true, display_name: true } } } },
-      dependencies: { include: { depends_on: { select: { id: true, title: true, status: true, is_completed: true, ai_progress: true, manual_progress: true, deleted_at: true } } } },
+      dependencies: { include: { depends_on: { select: { id: true, title: true, status: true, is_completed: true, ai_progress: true, manual_progress: true, deleted_at: true, template_key: true, project_id: true } } } },
       dependents: { include: { task: { select: { id: true, title: true, status: true, deleted_at: true } } } },
       progress_history: { orderBy: { created_at: "desc" }, take: 100 },
     },
@@ -439,12 +454,17 @@ export async function getTaskDetail(db: Db, actor: ActorT, id: string) {
   const userIds = [...new Set([...t.progress_history.map((h) => h.actor_user_id), ...logs.map((l) => l.actor_id)].filter(Boolean) as string[])];
   const users = await db.user.findMany({ where: { id: { in: userIds } }, select: { id: true, display_name: true } });
   const nameOf = (uid: string | null) => users.find((u) => u.id === uid)?.display_name ?? null;
+  const drafts = await projectsWithPlanDraft(db, t.dependencies.map((d) => d.depends_on.project_id));
   const readiness = taskReadiness(
-    t.dependencies.filter((d) => !d.depends_on.deleted_at).map((d) => ({ type: d.type as DependencyType, predecessor: { title: d.depends_on.title, status: d.depends_on.status, is_completed: d.depends_on.is_completed, effective_progress: effectiveProgress(d.depends_on) } })),
+    t.dependencies.filter((d) => !d.depends_on.deleted_at).map((d) => ({ type: d.type as DependencyType, predecessor: { title: d.depends_on.title, status: d.depends_on.status, is_completed: d.depends_on.is_completed, effective_progress: effectiveProgress(d.depends_on), has_draft: hasPlanDraft(d.depends_on, drafts) } })),
     t.allow_draft_start,
   );
   const res = taskResource(t);
+  const planRow = t.project_id ? await db.plan.findUnique({ where: { project_id: t.project_id }, include: { versions: { orderBy: { version_no: "desc" }, select: { version_no: true, approved_at: true } } } }) : null;
+  const approvedV = planRow?.versions.find((v) => v.approved_at);
+  const planV = approvedV ?? planRow?.versions[0];
   return {
+    plan: planV ? { versionNo: planV.version_no, isDraft: !approvedV } : null,
     task: t,
     effective: effectiveProgress(t),
     readiness,

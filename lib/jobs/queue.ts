@@ -9,10 +9,11 @@ export const QUEUES = {
   analyze: "meeting-analyze",
   propose: "meeting-propose",
   evaluate: "deliverable-evaluate",
+  reference: "reference-make",
 } as const;
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 
-export const JOB_TYPE_TO_QUEUE: Record<string, QueueName> = { extract: QUEUES.extract, analyze_meeting: QUEUES.analyze, propose_work: QUEUES.propose, evaluate_deliverable: QUEUES.evaluate };
+export const JOB_TYPE_TO_QUEUE: Record<string, QueueName> = { extract: QUEUES.extract, analyze_meeting: QUEUES.analyze, propose_work: QUEUES.propose, evaluate_deliverable: QUEUES.evaluate, reference: QUEUES.reference };
 
 const g = globalThis as unknown as { kgbBoss?: Promise<PgBoss> };
 
