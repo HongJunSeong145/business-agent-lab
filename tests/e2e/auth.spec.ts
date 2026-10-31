@@ -128,7 +128,7 @@ test("업무 드로어: URL 쿼리로 열리고, 없는 항목은 안내", async
   await page.goto("/?task=00000000-0000-0000-0000-000000000000");
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
-  await expect(dialog.locator("[role=alert]")).toHaveText("항목을 찾을 수 없습니다.");
+  await expect(dialog.locator("[role=alert]")).toHaveText("업무를 찾을 수 없습니다.");
   await dialog.getByRole("button", { name: "닫기" }).click();
   await expect(page).toHaveURL(/\/$/);
 });

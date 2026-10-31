@@ -23,7 +23,7 @@ export default async function DashboardPage() {
         <div className="lg:col-span-3"><Upcoming30 items={d.upcomingTasks} today={d.today} /></div>
       </div>
 
-      <NearestProject project={d.nextProject} />
+      <NearestProject project={d.nextProject} progress={d.nextProjectProgress} today={d.today} />
       <DepartmentCards cards={d.deptCards} today={d.today} />
       <MemberDirectory profiles={d.profiles} />
       <ContactDirectory columns={d.contactColumns} rows={d.contactRows} />

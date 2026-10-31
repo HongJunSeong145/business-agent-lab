@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { can, isLeader, ROLE_LABEL } from "@/lib/auth/can";
 import type { SessionUser } from "@/lib/auth/session";
 import { UserMenu } from "./user-menu";
+import { MainNav } from "./main-nav";
 
 /** 상단 고정 바 (8-1) */
 export async function TopBar({ user }: { user: SessionUser }) {
@@ -23,7 +24,9 @@ export async function TopBar({ user }: { user: SessionUser }) {
           KGB_Agent
         </Link>
 
-        <div className="relative ml-2 hidden max-w-md flex-1 md:block">
+        <MainNav />
+
+        <div className="relative ml-2 hidden max-w-sm flex-1 lg:block">
           <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted" />
           <input
             disabled
@@ -39,7 +42,6 @@ export async function TopBar({ user }: { user: SessionUser }) {
               검토 대기 <strong className="tabular text-text">{pending}</strong>
             </span>
           ) : null}
-          <Link href="/minutes" className="hidden rounded-lg px-2.5 py-1.5 text-sm hover:bg-bg sm:inline">회의록</Link>
           {can(user, { type: "meeting.upload" }, settings) ? (
             <UploadMinutesDialog
               maxMb={Number(process.env.UPLOAD_MAX_MB ?? 50)}

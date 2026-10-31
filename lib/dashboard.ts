@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { DEPARTMENTS, DEPARTMENT_CODES, type DepartmentCode } from "@/lib/design/tokens";
 import { dateColumnToString, kstDateString } from "@/lib/utils";
 import { defaultQuarter, effectiveProgress, type Quarter } from "@kgb/rules";
+import { loadProjectProgress } from "@/lib/project-progress";
 
 const OPEN_STATUSES = ["blocked", "todo", "in_progress", "review"];
 
@@ -44,6 +45,7 @@ export async function loadDashboard(termId: string) {
     prisma.project.findFirst({
       where: { term_id: termId, deleted_at: null, status: { notIn: ["cancelled", "done"] }, event_start: { gte: new Date(`${today}T00:00:00Z`) } },
       orderBy: { event_start: "asc" },
+      include: { funding_sources: true },
     }),
     prisma.memberProfile.findMany({ where: { term_id: termId, deleted_at: null }, orderBy: { display_order: "asc" } }),
     prisma.contactColumn.findMany({ where: { term_id: termId, deleted_at: null }, orderBy: { display_order: "asc" } }),
@@ -109,7 +111,10 @@ export async function loadDashboard(termId: string) {
         assignees: t.assignees.map((a) => a.user.display_name),
       };
     }),
-    nextProject,
+    nextProject: nextProject
+      ? { id: nextProject.id, title: nextProject.title, event_start: nextProject.event_start, funding: nextProject.funding_sources.map((f) => (f.source === "school" ? "교비" : "학생회비")) }
+      : null,
+    nextProjectProgress: nextProject ? ((await loadProjectProgress([nextProject.id])).get(nextProject.id) ?? null) : null,
     profiles,
     contactColumns,
     contactRows,

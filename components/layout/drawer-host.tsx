@@ -3,7 +3,8 @@
 import { Dialog } from "radix-ui";
 import { X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { TaskDrawerBody } from "@/components/tasks/task-drawer";
 import Link from "next/link";
 
 /**
@@ -25,8 +26,11 @@ export function DrawerHost() {
   const [state, setState] = useState<{ key: string; data?: DrawerData; error?: string } | null>(null);
   const key = type && id ? `${type}:${id}` : null;
 
+  const [taskTitle, setTaskTitle] = useState("");
+  const onTitle = useCallback((t: string) => setTaskTitle(t), []);
+
   useEffect(() => {
-    if (!type || !id || !key) return;
+    if (!type || !id || !key || type === "task") return;
     let cancelled = false;
     fetch(`/api/drawer?type=${type}&id=${encodeURIComponent(id)}`)
       .then(async (r) => {
@@ -56,7 +60,7 @@ export function DrawerHost() {
         <Dialog.Content className="fixed top-0 right-0 z-50 flex h-full w-full max-w-xl flex-col border-l border-border bg-surface shadow-xl focus:outline-none">
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <Dialog.Title className="text-base font-semibold">
-              {type ? TYPE_LABEL[type] : ""} {current?.data ? `· ${current.data.title}` : ""}
+              {type ? TYPE_LABEL[type] : ""} {type === "task" ? (taskTitle ? `· ${taskTitle}` : "") : current?.data ? `· ${current.data.title}` : ""}
             </Dialog.Title>
             <Dialog.Close className="rounded-md p-1 hover:bg-bg" aria-label="닫기">
               <X className="h-5 w-5" />
@@ -64,7 +68,9 @@ export function DrawerHost() {
           </div>
           <Dialog.Description className="sr-only">상세 정보 드로어</Dialog.Description>
           <div className="flex-1 overflow-y-auto px-5 py-4">
-            {!current ? (
+            {type === "task" && id ? (
+              <TaskDrawerBody key={id} id={id} onTitle={onTitle} />
+            ) : !current ? (
               <div className="space-y-3" aria-busy="true">
                 <div className="h-5 w-2/3 animate-pulse rounded bg-bg" />
                 <div className="h-4 w-1/2 animate-pulse rounded bg-bg" />
