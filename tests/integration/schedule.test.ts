@@ -199,3 +199,14 @@ describe("규칙 파라미터·휴일 설정 (5-7)", () => {
     expect(params.HOLIDAYS).toContain("2026-10-09");
   });
 });
+
+describe("기존 설치본 보완", () => {
+  it("휴일 목록이 비어 있으면 기본 공휴일을 채우고, 값이 있으면 그대로 둔다", async () => {
+    await prisma.setting.update({ where: { term_id_key: { term_id: pres.termId, key: "HOLIDAYS" } }, data: { value: [] } });
+    await ensureBaseSetup(prisma);
+    expect((await loadRuleParams(prisma, pres.termId)).HOLIDAYS.length).toBeGreaterThan(20);
+    await prisma.setting.update({ where: { term_id_key: { term_id: pres.termId, key: "HOLIDAYS" } }, data: { value: [{ date: "2026-11-30", name: "개교기념일" }] } });
+    await ensureBaseSetup(prisma);
+    expect((await loadRuleParams(prisma, pres.termId)).HOLIDAYS).toEqual(["2026-11-30"]);
+  });
+});

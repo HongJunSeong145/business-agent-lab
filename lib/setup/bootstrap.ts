@@ -42,6 +42,12 @@ export async function ensureBaseSetup(db: Db, today = new Date()) {
     });
   }
 
+  // Phase 4 이전에 설치된 DB: 휴일 목록이 비어 있으면 기본 공휴일을 채운다(사용자가 넣은 값은 건드리지 않음)
+  const holidays = await db.setting.findUnique({ where: { term_id_key: { term_id: term.id, key: "HOLIDAYS" } } });
+  if (holidays && Array.isArray(holidays.value) && holidays.value.length === 0) {
+    await db.setting.update({ where: { id: holidays.id }, data: { value: DEFAULT_SETTINGS.HOLIDAYS as Prisma.InputJsonValue } });
+  }
+
   for (const [i, c] of DEFAULT_CONTACT_COLUMNS.entries()) {
     await db.contactColumn.upsert({
       where: { term_id_key: { term_id: term.id, key: c.key } },
