@@ -1,8 +1,9 @@
+import { todayKst } from "@/lib/clock";
 import "server-only";
 import { prisma } from "@/lib/db";
 import { DEPARTMENTS, DEPARTMENT_CODES, type DepartmentCode } from "@/lib/design/tokens";
-import { dateColumnToString, kstDateString } from "@/lib/utils";
-import { defaultQuarter, effectiveProgress, type Quarter } from "@kgb/rules";
+import { dateColumnToString } from "@/lib/utils";
+import { addDays, defaultQuarter, effectiveProgress, type Quarter } from "@kgb/rules";
 import { loadProjectProgress } from "@/lib/project-progress";
 
 const OPEN_STATUSES = ["blocked", "todo", "in_progress", "review"];
@@ -20,8 +21,8 @@ export type DeptCard = {
 
 /** 메인 대시보드 데이터 (8-2) — 모든 값은 DB 실데이터. 하드코딩된 가짜 값 없음. */
 export async function loadDashboard(termId: string) {
-  const today = kstDateString();
-  const in30 = kstDateString(new Date(Date.now() + 30 * 86_400_000));
+  const today = todayKst();
+  const in30 = addDays(today, 30);
 
   const [term, meetings, departments, upcomingTasks, nextProject, profiles, contactColumns, contactRows] = await Promise.all([
     prisma.term.findUniqueOrThrow({ where: { id: termId }, include: { council: true } }),
@@ -38,7 +39,7 @@ export async function loadDashboard(termId: string) {
         due_date: { gte: new Date(`${today}T00:00:00Z`), lte: new Date(`${in30}T00:00:00Z`) },
         departments: { some: { department: { term_id: termId } } },
       },
-      include: { departments: { include: { department: true } }, assignees: { include: { user: true } } },
+      include: { departments: { include: { department: true } }, assignees: { include: { user: true } }, project: { select: { title: true, status: true } } },
       orderBy: { due_date: "asc" },
       take: 50,
     }),
@@ -51,6 +52,11 @@ export async function loadDashboard(termId: string) {
     prisma.contactColumn.findMany({ where: { term_id: termId, deleted_at: null }, orderBy: { display_order: "asc" } }),
     prisma.contactRow.findMany({ where: { term_id: termId, deleted_at: null }, orderBy: { display_order: "asc" } }),
   ]);
+
+  const milestones = await prisma.scheduleEvent.findMany({
+    where: { term_id: termId, start: { gte: new Date(`${today}T00:00:00Z`), lte: new Date(`${in30}T00:00:00Z`) }, project: { status: { not: "cancelled" } } },
+    include: { project: { select: { title: true } } },
+  });
 
   // 국서 카드: 주관(lead) 업무만 집계 (D4, D10)
   const leadTasks = await prisma.taskDepartment.findMany({
@@ -100,17 +106,35 @@ export async function loadDashboard(termId: string) {
     currentQuarter: defaultQuarter(termQuarters, today) as Quarter,
     meetings,
     deptCards,
-    upcomingTasks: upcomingTasks.map((t) => {
-      const lead = t.departments.find((x) => x.role === "lead");
-      return {
-        id: t.id,
-        title: t.title,
-        due: dateColumnToString(t.due_date!),
-        dueState: t.due_state,
-        leadCode: (lead?.department.code ?? null) as DepartmentCode | null,
-        assignees: t.assignees.map((a) => a.user.display_name),
-      };
-    }),
+    upcoming: [
+      ...upcomingTasks
+        .filter((t) => t.project?.status !== "cancelled")
+        .map((t) => {
+          const lead = t.departments.find((x) => x.role === "lead");
+          return {
+            id: t.id,
+            kind: "deadline" as const,
+            title: t.title,
+            due: dateColumnToString(t.due_date!),
+            dueState: t.due_state as "proposed" | "confirmed",
+            leadCode: (lead?.department.code ?? null) as DepartmentCode | null,
+            assignees: t.assignees.map((a) => a.user.display_name),
+            feasible: t.due_feasible,
+            projectTitle: t.project?.title ?? null,
+          };
+        }),
+      ...milestones.map((e) => ({
+        id: e.id,
+        kind: "milestone" as const,
+        title: e.title,
+        due: e.start.toISOString().slice(0, 10),
+        dueState: e.state as "proposed" | "confirmed",
+        leadCode: null,
+        assignees: [],
+        feasible: !e.title.includes("일정 불가"),
+        projectTitle: e.project?.title ?? null,
+      })),
+    ].sort((a, b) => a.due.localeCompare(b.due)),
     nextProject: nextProject
       ? { id: nextProject.id, title: nextProject.title, event_start: nextProject.event_start, funding: nextProject.funding_sources.map((f) => (f.source === "school" ? "교비" : "학생회비")) }
       : null,

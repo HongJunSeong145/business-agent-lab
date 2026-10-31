@@ -19,7 +19,7 @@ test("관리자 로그인 → 대시보드 셸이 지시서 순서대로 실제 
   await expect(banner.getByRole("heading", { level: 1 })).toHaveText("제1대 학생회");
 
   // 섹션 순서(8-2): 배너 → 최근 회의록 → 분기 캘린더 → 30일 → 사업 진척도 → 국서 카드 → 인적사항 → 연락망
-  const headings = await page.locator("main h1, main h2, main section[aria-label='국서 현황']").evaluateAll((els) =>
+  const headings = await page.locator("main h1, main h2:not(.fc-toolbar-title), main section[aria-label='국서 현황']").evaluateAll((els) =>
     els.map((e) => (e.tagName === "SECTION" ? "국서 현황" : e.textContent?.trim())),
   );
   expect(headings).toEqual([

@@ -22,10 +22,10 @@ export default async function SettingsPage() {
       {can(user, { type: "settings.manage" }) ? (
         <Card className="space-y-3">
           <CardTitle>학생회 운영</CardTitle>
+          <Link href="/settings/term" className="block text-sm underline">기수·분기 설정 (학사일정으로 분기 자동 계산, 배너 문구)</Link>
+          <Link href="/settings/rules" className="block text-sm underline">규칙 파라미터·휴일</Link>
           <div className="flex flex-wrap gap-2">
-            <ComingSoon phase={4} label="기수·분기 설정" />
-            <ComingSoon phase={4} label="규칙 파라미터·휴일" />
-            <ComingSoon phase={8} label="배너" />
+            <ComingSoon phase={8} label="배너 사진" />
             <ComingSoon phase={5} label="AI 사용량" />
           </div>
         </Card>

@@ -2,7 +2,7 @@ import { requireUser } from "@/lib/auth/session";
 import { can } from "@/lib/auth/can";
 import { loadDashboard } from "@/lib/dashboard";
 import {
-  Banner, ContactDirectory, DepartmentCards, MemberDirectory, NearestProject, QuarterCalendarShell, RecentMeetings, Upcoming30,
+  Banner, ContactDirectory, DepartmentCards, MemberDirectory, NearestProject, QuarterCalendarCard, RecentMeetings, Upcoming30,
 } from "@/components/dashboard/sections";
 
 export const dynamic = "force-dynamic";
@@ -19,8 +19,8 @@ export default async function DashboardPage() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
         <div className="lg:col-span-3"><RecentMeetings meetings={d.meetings} /></div>
-        <div className="lg:col-span-6"><QuarterCalendarShell quarters={d.termQuarters} current={d.currentQuarter} /></div>
-        <div className="lg:col-span-3"><Upcoming30 items={d.upcomingTasks} today={d.today} /></div>
+        <div className="lg:col-span-6"><QuarterCalendarCard quarters={d.termQuarters} current={d.currentQuarter} today={d.today} /></div>
+        <div className="lg:col-span-3"><Upcoming30 items={d.upcoming} today={d.today} canEdit={can(user, { type: "task.confirmDeadline" })} /></div>
       </div>
 
       <NearestProject project={d.nextProject} progress={d.nextProjectProgress} today={d.today} />

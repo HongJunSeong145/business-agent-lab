@@ -84,3 +84,14 @@ html, body {
 }
 
 .tabular { font-variant-numeric: tabular-nums; }
+
+/* ── 분기 캘린더 (FullCalendar) — 제안 일정은 점선·연한 색, 확정은 실선 (D2, 8-2 ②) ── */
+.kgb-calendar .fc { font-size: 13px; --fc-border-color: var(--border); --fc-today-bg-color: #FFF8E6; --fc-page-bg-color: var(--surface); }
+.kgb-calendar .fc .fc-toolbar-title { font-size: 16px; font-weight: 600; }
+.kgb-calendar .fc .fc-button { background: var(--surface); color: var(--text); border-color: var(--border); padding: 2px 8px; }
+.kgb-calendar .fc .fc-button:hover { background: var(--bg); }
+.kgb-calendar .fc .fc-daygrid-event { border-radius: 4px; margin-top: 1px; }
+.kgb-calendar .fc .kgb-proposed { border-style: dashed !important; border-width: 1px; opacity: 0.85; }
+.kgb-calendar .fc .kgb-confirmed { border-style: solid; }
+.kgb-calendar .fc .kgb-event_day { border-width: 2px; }
+.kgb-calendar .fc .fc-day-other { background: var(--bg); }

@@ -7,6 +7,7 @@ import { quarterOf } from "@kgb/rules";
 import { dateColumnToString } from "@/lib/utils";
 import { ServiceError } from "./invitations";
 import { recomputeReadiness } from "./tasks";
+import { recalcProjectSchedule } from "./schedule";
 
 export const PROJECT_CATEGORIES = ["event", "promotion", "partnership", "welfare", "admin", "other"] as const;
 export const PROJECT_CATEGORY_LABEL: Record<(typeof PROJECT_CATEGORIES)[number], string> = {
@@ -35,6 +36,7 @@ export const projectSchema = z
     host: z.string().trim().max(100).optional().transform((v) => v || null),
     organizer: z.string().trim().max(100).optional().transform((v) => v || null),
     uses_external_vendor: z.coerce.boolean().default(false),
+    promo_tier: z.union([z.enum(["free", "low", "high"]), z.literal(""), z.null()]).optional().transform((v) => v || null),
     funding: z
       .array(z.object({ source: z.enum(["school", "student_fee"]), amount_planned: money }))
       .max(2)
@@ -81,11 +83,13 @@ export async function createProject(db: Db, actor: ActorT, raw: unknown) {
         host: v.host,
         organizer: v.organizer,
         uses_external_vendor: v.uses_external_vendor,
+        promo_tier: v.promo_tier,
         quarter,
         funding_sources: { create: v.funding.map((f) => ({ source: f.source, amount_planned: BigInt(f.amount_planned) })) },
       },
     });
     await writeAudit(tx, { actorId: actor.userId, action: "project.create", entityType: "project", entityId: p.id, diff: { after: { ...v } } });
+    await recalcProjectSchedule(tx, actor.termId, p.id, "proposed"); // 증빙 요구사항(재원 규칙) 생성
     return p;
   });
 }
@@ -103,7 +107,7 @@ export async function updateProject(db: Db, actor: ActorT, id: string, raw: unkn
       data: {
         title: v.title, category: v.category, event_start: toDate(v.event_start), event_end: toDate(v.event_end ?? v.event_start),
         venue: v.venue, expected_beneficiaries: v.expected_beneficiaries, host: v.host, organizer: v.organizer,
-        uses_external_vendor: v.uses_external_vendor, quarter,
+        uses_external_vendor: v.uses_external_vendor, promo_tier: v.promo_tier, quarter,
       },
     });
     await tx.projectFundingSource.deleteMany({ where: { project_id: id, source: { notIn: v.funding.map((f) => f.source) } } });
@@ -118,6 +122,8 @@ export async function updateProject(db: Db, actor: ActorT, id: string, raw: unkn
       actorId: actor.userId, action: "project.update", entityType: "project", entityId: id,
       diff: { before: { title: before.title, event_start: before.event_start, venue: before.venue, funding: before.funding_sources.map((f) => f.source) }, after: v },
     });
+    // 행사일·재원·외부업체·홍보 등급 변경 → 제안 마감만 재계산, 확정 마감은 유지(T16)
+    await recalcProjectSchedule(tx, actor.termId, id, "proposed");
     return p;
   });
 }
@@ -154,5 +160,24 @@ export async function cancelProject(db: Db, actor: ActorT, id: string) {
     // 다른 사업 업무가 이 사업 업무에 의존하던 경우 차단 해제
     await recomputeReadiness(tx, actor.termId, { dependentsOf: open.map((t) => t.id) });
     return { cancelledTasks: open.length };
+  });
+}
+
+const datesSchema = z
+  .object({ event_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "행사일 형식 오류"), event_end: optDate })
+  .refine((v) => !v.event_end || v.event_start <= v.event_end, { message: "행사 종료일이 시작일보다 빠릅니다." });
+
+/** 캘린더에서 행사일을 옮김 → 분기 다시 계산 + 제안 마감만 재계산(T16) */
+export async function moveProjectDates(db: Db, actor: ActorT, id: string, raw: unknown) {
+  assertCan(actor, { type: "project.confirmSchedule" });
+  const v = parse(datesSchema, raw);
+  const p = await db.project.findFirst({ where: { id, term_id: actor.termId, deleted_at: null } });
+  if (!p) throw new ServiceError("사업을 찾을 수 없습니다.", 404);
+  if (p.status === "cancelled") throw new ServiceError("취소된 사업은 옮길 수 없습니다.");
+  const quarter = await computeQuarter(db, actor.termId, v.event_start);
+  return db.$transaction(async (tx) => {
+    await tx.project.update({ where: { id }, data: { event_start: toDate(v.event_start), event_end: toDate(v.event_end ?? v.event_start), quarter } });
+    await writeAudit(tx, { actorId: actor.userId, action: "project.move_dates", entityType: "project", entityId: id, diff: { before: { event_start: p.event_start, event_end: p.event_end }, after: v } });
+    return recalcProjectSchedule(tx, actor.termId, id, "proposed");
   });
 }

@@ -11,7 +11,7 @@ const { ensureBaseSetup, ensureInitialAdmin } = await import("../../lib/setup/bo
 const { seedDemo } = await import("../../lib/setup/demo");
 try {
   await resetAllTables(prisma);
-  await ensureBaseSetup(prisma);
+  await ensureBaseSetup(prisma, new Date("2026-10-31T00:00:00Z")); // 기수 날짜 고정
   await ensureInitialAdmin(prisma, process.env.INITIAL_ADMIN_EMAIL, process.env.INITIAL_ADMIN_PASSWORD);
   await seedDemo(prisma, process.env.SEED_DEMO_PASSWORD);
 } finally {
