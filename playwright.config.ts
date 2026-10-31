@@ -22,6 +22,7 @@ function server(port: number, ai: "mock" | "none") {
       AUTH_URL: `http://localhost:${port}`,
       AI_PROVIDER: ai,
       OPENROUTER_API_KEY: "",
+      ANTHROPIC_API_KEY: "",
       STORAGE_DRIVER: "db",
       WORKER_MODE: "inline",
       UPLOAD_MAX_MB: "50",

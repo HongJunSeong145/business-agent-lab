@@ -1,0 +1,919 @@
+{
+  "a1": {
+    "agenda": [
+      {
+        "title": "연말 단과대 축제에 관한 건",
+        "para": 6,
+        "kind": "deliberation",
+        "decisions": [
+          {
+            "text": "12월 18일(금) 데모관 광장에서 단과대 축제 진행",
+            "para": 7,
+            "quote": "12월 18일(금) 데모관 광장에서 단과대 축제 진행",
+            "grounded": true
+          },
+          {
+            "text": "교비 300만원 사용, 무대·음향은 외부 대행사에 위탁",
+            "para": 8,
+            "quote": "교비 300만원 사용, 무대·음향은 외부 대행사에 맡기기로 함",
+            "grounded": true
+          },
+          {
+            "text": "기획국은 다음주 금요일까지 기획안 초안 작성",
+            "para": 10,
+            "quote": "기획국은 다음주 금요일까지 기획안 초안 작성",
+            "grounded": true
+          },
+          {
+            "text": "사무국은 대행사 견적 3곳 이상 수집",
+            "para": 11,
+            "quote": "사무국은 대행사 견적 3곳 이상 받아 올 것",
+            "grounded": true
+          }
+        ],
+        "discussions": [
+          {
+            "text": "예상 참여 인원 400명",
+            "para": 9,
+            "quote": "예상 참여 인원 400명",
+            "grounded": true
+          },
+          {
+            "text": "홍보물은 현수막과 인쇄 포스터 200장 예정",
+            "para": 12,
+            "quote": "홍보물은 현수막과 인쇄 포스터 200장 예정",
+            "grounded": true
+          }
+        ],
+        "pending": [
+          {
+            "text": "푸드트럭 섭외 여부는 추후 논의",
+            "para": 13,
+            "quote": "푸드트럭 섭외 여부는 추후 논의",
+            "grounded": true
+          }
+        ]
+      },
+      {
+        "title": "시험기간 열람실 운영",
+        "para": 14,
+        "kind": "other",
+        "decisions": [
+          {
+            "text": "기존 방식 유지",
+            "para": 15,
+            "quote": "기존 방식 유지, 별도 논의 없음",
+            "grounded": true
+          }
+        ],
+        "discussions": [],
+        "pending": []
+      }
+    ],
+    "action_items": [
+      {
+        "who": "기획국",
+        "department": "planning",
+        "what": "축제 기획안 초안 작성",
+        "due_text": "10. 30(금)",
+        "due_date": "2026-10-30",
+        "date_confidence": "medium",
+        "para": 18,
+        "quote": "기획국 | 1. 축제 기획안 초안 작성 | 10. 30(금)",
+        "grounded": true
+      },
+      {
+        "who": "사무국",
+        "department": "secretariat",
+        "what": "무대·음향 대행사 견적 수집(3곳 이상)",
+        "due_text": "11. 6(금)",
+        "due_date": "2026-11-06",
+        "date_confidence": "medium",
+        "para": 19,
+        "quote": "사무국 | 1. 무대·음향 대행사 견적 수집 | 11. 6(금)",
+        "grounded": true
+      },
+      {
+        "who": "홍보국",
+        "department": "promotion",
+        "what": "축제 홍보물 등급·수량 결정",
+        "due_text": null,
+        "due_date": null,
+        "date_confidence": "low",
+        "para": 20,
+        "quote": "홍보국 | 1. 축제 홍보물 등급·수량 결정 | -",
+        "grounded": true
+      }
+    ],
+    "mentioned_dates": [
+      {
+        "text": "12월 18일(금)",
+        "date": "2026-12-18",
+        "date_confidence": "medium",
+        "para": 7,
+        "quote": "12월 18일(금) 데모관 광장에서 단과대 축제 진행",
+        "grounded": true
+      },
+      {
+        "text": "다음주 금요일",
+        "date": "2026-10-30",
+        "date_confidence": "low",
+        "para": 10,
+        "quote": "기획국은 다음주 금요일까지 기획안 초안 작성",
+        "grounded": true
+      },
+      {
+        "text": "10. 30(금)",
+        "date": "2026-10-30",
+        "date_confidence": "medium",
+        "para": 18,
+        "quote": "축제 기획안 초안 작성 | 10. 30(금)",
+        "grounded": true
+      },
+      {
+        "text": "11. 6(금)",
+        "date": "2026-11-06",
+        "date_confidence": "medium",
+        "para": 19,
+        "quote": "무대·음향 대행사 견적 수집 | 11. 6(금)",
+        "grounded": true
+      }
+    ],
+    "budget": [
+      {
+        "item": "연말 단과대 축제 (무대·음향 외부 대행 포함)",
+        "amount": 3000000,
+        "funding_source": "school",
+        "para": 8,
+        "quote": "교비 300만원 사용, 무대·음향은 외부 대행사에 맡기기로 함",
+        "grounded": true
+      },
+      {
+        "item": "홍보물(현수막, 인쇄 포스터 200장)",
+        "amount": null,
+        "funding_source": null,
+        "para": 12,
+        "quote": "홍보물은 현수막과 인쇄 포스터 200장 예정",
+        "grounded": true
+      }
+    ],
+    "events": [
+      {
+        "title": "연말 단과대 축제",
+        "date": "2026-12-18",
+        "date_confidence": "medium",
+        "venue": "데모관 광장",
+        "beneficiaries": 400,
+        "funding": [
+          "school"
+        ],
+        "uses_vendor": true,
+        "para": 7,
+        "quote": "12월 18일(금) 데모관 광장에서 단과대 축제 진행",
+        "grounded": true
+      }
+    ]
+  },
+  "a2": {
+    "projects": [
+      {
+        "ref": "P1",
+        "existing_project_id": null,
+        "title": "연말 단과대 축제",
+        "category": "event",
+        "event_start": "2026-12-18",
+        "venue": "데모관 광장",
+        "beneficiaries": 400,
+        "funding": [
+          "school"
+        ],
+        "uses_vendor": true,
+        "evidence": [
+          {
+            "para": 7,
+            "quote": "12월 18일(금) 데모관 광장에서 단과대 축제 진행",
+            "grounded": true
+          },
+          {
+            "para": 8,
+            "quote": "교비 300만원 사용, 무대·음향은 외부 대행사에 맡기기로 함",
+            "grounded": true
+          },
+          {
+            "para": 9,
+            "quote": "예상 참여 인원 400명",
+            "grounded": true
+          }
+        ],
+        "confidence": 0.95
+      }
+    ],
+    "tasks": [
+      {
+        "project_ref": "P1",
+        "title": "축제 기획안 초안 작성",
+        "description": "연말 단과대 축제 기획안 초안 작성(일시·장소·예산액·주최·주관·행사명·배경 및 목적·행사 내용·타임테이블). 교비 사용이므로 행사 21일 전 공문·기획안 송부 일정 고려.",
+        "lead_department": "planning",
+        "support_departments": [],
+        "template_key": "PLN_DRAFT",
+        "assignee_hint": "기획국",
+        "due_date": "2026-10-30",
+        "inferred": false,
+        "inference_reason": null,
+        "evidence": [
+          {
+            "para": 10,
+            "quote": "기획국은 다음주 금요일까지 기획안 초안 작성",
+            "grounded": true
+          },
+          {
+            "para": 18,
+            "quote": "기획국 | 1. 축제 기획안 초안 작성 | 10. 30(금)",
+            "grounded": true
+          }
+        ],
+        "confidence": 0.95
+      },
+      {
+        "project_ref": "P1",
+        "title": "무대·음향 대행사 견적 수집(3곳 이상)",
+        "description": "무대·음향 외부 대행사 3곳 이상 견적 수집",
+        "lead_department": "secretariat",
+        "support_departments": [
+          "finance"
+        ],
+        "template_key": "VENDOR_CONFIRM",
+        "assignee_hint": "사무국",
+        "due_date": "2026-11-06",
+        "inferred": false,
+        "inference_reason": null,
+        "evidence": [
+          {
+            "para": 11,
+            "quote": "사무국은 대행사 견적 3곳 이상 받아 올 것",
+            "grounded": true
+          },
+          {
+            "para": 19,
+            "quote": "사무국 | 1. 무대·음향 대행사 견적 수집 | 11. 6(금)",
+            "grounded": true
+          }
+        ],
+        "confidence": 0.95
+      },
+      {
+        "project_ref": "P1",
+        "title": "축제 홍보물 등급·수량 결정",
+        "description": "현수막 및 인쇄 포스터 200장(저비용 인쇄) 예정안을 바탕으로 홍보물 등급·수량 결정",
+        "lead_department": "promotion",
+        "support_departments": [
+          "finance"
+        ],
+        "template_key": "PRO_TIER",
+        "assignee_hint": "홍보국",
+        "due_date": null,
+        "inferred": false,
+        "inference_reason": null,
+        "evidence": [
+          {
+            "para": 12,
+            "quote": "홍보물은 현수막과 인쇄 포스터 200장 예정",
+            "grounded": true
+          },
+          {
+            "para": 20,
+            "quote": "홍보국 | 1. 축제 홍보물 등급·수량 결정 | -",
+            "grounded": true
+          }
+        ],
+        "confidence": 0.9
+      },
+      {
+        "project_ref": "P1",
+        "title": "푸드트럭 섭외 여부 검토",
+        "description": "추후 논의하기로 한 푸드트럭 섭외 여부에 대한 후보 검토(보류 안건)",
+        "lead_department": "secretariat",
+        "support_departments": [
+          "planning"
+        ],
+        "template_key": "SEC_PARTNER_LIST",
+        "assignee_hint": null,
+        "due_date": null,
+        "inferred": false,
+        "inference_reason": null,
+        "evidence": [
+          {
+            "para": 13,
+            "quote": "푸드트럭 섭외 여부는 추후 논의",
+            "grounded": true
+          }
+        ],
+        "confidence": 0.5
+      }
+    ]
+  },
+  "proposals": [
+    {
+      "kind": "new_project",
+      "project_key": "01-school-vendor.txt:P1",
+      "payload": {
+        "title": "연말 단과대 축제",
+        "category": "event",
+        "event_start": "2026-12-18",
+        "venue": "데모관 광장",
+        "expected_beneficiaries": 400,
+        "funding": [
+          "school"
+        ],
+        "uses_external_vendor": true
+      },
+      "evidence": [
+        {
+          "para": 7,
+          "quote": "12월 18일(금) 데모관 광장에서 단과대 축제 진행",
+          "grounded": true
+        },
+        {
+          "para": 8,
+          "quote": "교비 300만원 사용, 무대·음향은 외부 대행사에 맡기기로 함",
+          "grounded": true
+        },
+        {
+          "para": 9,
+          "quote": "예상 참여 인원 400명",
+          "grounded": true
+        }
+      ],
+      "inferred": false,
+      "confidence": 0.95,
+      "dedupe_key": "c274152a03b04414ea1cae49751ff895fbb168a78173184d4fa911d7277b2a4b"
+    },
+    {
+      "kind": "new_task",
+      "project_key": "01-school-vendor.txt:P1",
+      "target_id": null,
+      "payload": {
+        "title": "축제 기획안 초안 작성",
+        "description": "연말 단과대 축제 기획안 초안 작성(일시·장소·예산액·주최·주관·행사명·배경 및 목적·행사 내용·타임테이블). 교비 사용이므로 행사 21일 전 공문·기획안 송부 일정 고려.",
+        "lead_department": "planning",
+        "support_departments": [],
+        "template_key": "PLN_DRAFT",
+        "assignee_hint": "기획국",
+        "assignee_ids": [],
+        "due_date": "2026-10-30",
+        "due_reason": "회의록에 명시된 기한(¶10)",
+        "due_feasible": true,
+        "acceptance_criteria": [
+          {
+            "text": "일시·장소·예산액",
+            "done": false
+          },
+          {
+            "text": "주최·주관·행사명",
+            "done": false
+          },
+          {
+            "text": "배경 및 목적",
+            "done": false
+          },
+          {
+            "text": "행사 내용",
+            "done": false
+          },
+          {
+            "text": "타임테이블(필요 시)",
+            "done": false
+          }
+        ],
+        "project_id": null,
+        "project_title": "연말 단과대 축제"
+      },
+      "evidence": [
+        {
+          "para": 10,
+          "quote": "기획국은 다음주 금요일까지 기획안 초안 작성",
+          "grounded": true
+        },
+        {
+          "para": 18,
+          "quote": "기획국 | 1. 축제 기획안 초안 작성 | 10. 30(금)",
+          "grounded": true
+        }
+      ],
+      "inferred": false,
+      "inference_reason": null,
+      "confidence": 0.95,
+      "dedupe_key": "e2ce1ac55ddf2bf1d667b1a33077b3910fa98823212ff7bf2538ddcab7c89c60"
+    },
+    {
+      "kind": "new_task",
+      "project_key": "01-school-vendor.txt:P1",
+      "target_id": null,
+      "payload": {
+        "title": "무대·음향 대행사 견적 수집(3곳 이상)",
+        "description": "무대·음향 외부 대행사 3곳 이상 견적 수집",
+        "lead_department": "secretariat",
+        "support_departments": [
+          "finance"
+        ],
+        "template_key": "VENDOR_CONFIRM",
+        "assignee_hint": "사무국",
+        "assignee_ids": [],
+        "due_date": "2026-11-06",
+        "due_reason": "회의록에 명시된 기한(¶11)",
+        "due_feasible": true,
+        "acceptance_criteria": [
+          {
+            "text": "견적서",
+            "done": false
+          },
+          {
+            "text": "업체 확정",
+            "done": false
+          }
+        ],
+        "project_id": null,
+        "project_title": "연말 단과대 축제"
+      },
+      "evidence": [
+        {
+          "para": 11,
+          "quote": "사무국은 대행사 견적 3곳 이상 받아 올 것",
+          "grounded": true
+        },
+        {
+          "para": 19,
+          "quote": "사무국 | 1. 무대·음향 대행사 견적 수집 | 11. 6(금)",
+          "grounded": true
+        }
+      ],
+      "inferred": false,
+      "inference_reason": null,
+      "confidence": 0.95,
+      "dedupe_key": "42b6c406b899a5501f482190766926bbd70daa316992b5e568f27a55622587cd"
+    },
+    {
+      "kind": "new_task",
+      "project_key": "01-school-vendor.txt:P1",
+      "target_id": null,
+      "payload": {
+        "title": "축제 홍보물 등급·수량 결정",
+        "description": "현수막 및 인쇄 포스터 200장(저비용 인쇄) 예정안을 바탕으로 홍보물 등급·수량 결정",
+        "lead_department": "promotion",
+        "support_departments": [
+          "finance"
+        ],
+        "template_key": "PRO_TIER",
+        "assignee_hint": "홍보국",
+        "assignee_ids": [],
+        "due_date": "2026-12-04",
+        "due_reason": "후속 '홍보물 제작'(소요 4일) 착수 전 (토·일·휴일이라 직전 평일로 당김) → 12/4",
+        "due_feasible": true,
+        "acceptance_criteria": [
+          {
+            "text": "등급과 예상 비용·수량",
+            "done": false
+          }
+        ],
+        "project_id": null,
+        "project_title": "연말 단과대 축제"
+      },
+      "evidence": [
+        {
+          "para": 12,
+          "quote": "홍보물은 현수막과 인쇄 포스터 200장 예정",
+          "grounded": true
+        },
+        {
+          "para": 20,
+          "quote": "홍보국 | 1. 축제 홍보물 등급·수량 결정 | -",
+          "grounded": true
+        }
+      ],
+      "inferred": false,
+      "inference_reason": null,
+      "confidence": 0.9,
+      "dedupe_key": "61567a9ed65a8314cecd7cf8c02b74546d2356850bf563aa994bad9c25304478"
+    },
+    {
+      "kind": "new_task",
+      "project_key": "01-school-vendor.txt:P1",
+      "target_id": null,
+      "payload": {
+        "title": "푸드트럭 섭외 여부 검토",
+        "description": "추후 논의하기로 한 푸드트럭 섭외 여부에 대한 후보 검토(보류 안건)",
+        "lead_department": "secretariat",
+        "support_departments": [
+          "planning"
+        ],
+        "template_key": "SEC_PARTNER_LIST",
+        "assignee_hint": null,
+        "assignee_ids": [],
+        "due_date": "2026-12-17",
+        "due_reason": "행사(12/18) 전날까지 → 12/17",
+        "due_feasible": true,
+        "acceptance_criteria": [
+          {
+            "text": "후보 기업·문의 채널 목록",
+            "done": false
+          }
+        ],
+        "project_id": null,
+        "project_title": "연말 단과대 축제"
+      },
+      "evidence": [
+        {
+          "para": 13,
+          "quote": "푸드트럭 섭외 여부는 추후 논의",
+          "grounded": true
+        }
+      ],
+      "inferred": false,
+      "inference_reason": null,
+      "confidence": 0.5,
+      "dedupe_key": "1295c2ac9e02ebb0c25f71ce417b94da15895c97ad9bdf1abb4797033745c18e"
+    },
+    {
+      "kind": "new_task",
+      "project_key": "01-school-vendor.txt:P1",
+      "target_id": null,
+      "payload": {
+        "title": "행사 예산 범위 설정 및 예산 시나리오 제공",
+        "description": null,
+        "lead_department": "finance",
+        "support_departments": [],
+        "template_key": "FIN_BUDGET_RANGE",
+        "assignee_hint": null,
+        "assignee_ids": [],
+        "due_date": "2026-11-06",
+        "due_reason": "'기획안 초안 작성' 업무와 겹쳐 진행, 그보다 먼저 끝냄 (토·일·휴일이라 직전 평일로 당김) → 11/6",
+        "due_feasible": true,
+        "acceptance_criteria": [
+          {
+            "text": "최소·표준·확대 예산 시나리오",
+            "done": false
+          },
+          {
+            "text": "재원별 금액",
+            "done": false
+          }
+        ],
+        "project_id": null,
+        "project_title": "연말 단과대 축제"
+      },
+      "evidence": [],
+      "inferred": true,
+      "inference_reason": "표준 업무 템플릿(지시서 5-2)",
+      "confidence": 0.5,
+      "dedupe_key": "bd0df7548f8b5266bc801fc7902eb54f65c69b963b20e23885be404118f0a714"
+    },
+    {
+      "kind": "new_task",
+      "project_key": "01-school-vendor.txt:P1",
+      "target_id": null,
+      "payload": {
+        "title": "기획안 검토 및 결재",
+        "description": null,
+        "lead_department": "planning",
+        "support_departments": [],
+        "template_key": "PLN_APPROVAL",
+        "assignee_hint": null,
+        "assignee_ids": [],
+        "due_date": "2026-11-13",
+        "due_reason": "후속 '외부업체·대행사 견적 및 확정'(소요 7일) 착수 전 → 11/13",
+        "due_feasible": true,
+        "acceptance_criteria": [
+          {
+            "text": "회장 결재 완료",
+            "done": false
+          }
+        ],
+        "project_id": null,
+        "project_title": "연말 단과대 축제"
+      },
+      "evidence": [],
+      "inferred": true,
+      "inference_reason": "표준 업무 템플릿(지시서 5-2)",
+      "confidence": 0.5,
+      "dedupe_key": "fd24852065efee0df6cc6eaf85b42b77965e2570c28dcbeaab7836991cbcd60a"
+    },
+    {
+      "kind": "new_task",
+      "project_key": "01-school-vendor.txt:P1",
+      "target_id": null,
+      "payload": {
+        "title": "제휴 요청서(PPT 구성안) 및 이메일 문안 작성",
+        "description": null,
+        "lead_department": "secretariat",
+        "support_departments": [
+          "planning"
+        ],
+        "template_key": "SEC_PROPOSAL",
+        "assignee_hint": null,
+        "assignee_ids": [],
+        "due_date": "2026-12-07",
+        "due_reason": "후속 '제휴 문의 발송·회신 관리·확정'(소요 10일) 착수 전 → 12/7",
+        "due_feasible": true,
+        "acceptance_criteria": [
+          {
+            "text": "요청서 구성안",
+            "done": false
+          },
+          {
+            "text": "이메일 문안",
+            "done": false
+          }
+        ],
+        "project_id": null,
+        "project_title": "연말 단과대 축제"
+      },
+      "evidence": [],
+      "inferred": true,
+      "inference_reason": "표준 업무 템플릿(지시서 5-2)",
+      "confidence": 0.5,
+      "dedupe_key": "70ac84c8552b95b19581f0ca2bf61e2f776dfde564f6f5aa6b0f1386b931ff08"
+    },
+    {
+      "kind": "new_task",
+      "project_key": "01-school-vendor.txt:P1",
+      "target_id": null,
+      "payload": {
+        "title": "제휴 문의 발송·회신 관리·확정",
+        "description": null,
+        "lead_department": "secretariat",
+        "support_departments": [],
+        "template_key": "SEC_CONTACT",
+        "assignee_hint": null,
+        "assignee_ids": [],
+        "due_date": "2026-12-17",
+        "due_reason": "행사(12/18) 전날까지 → 12/17",
+        "due_feasible": true,
+        "acceptance_criteria": [
+          {
+            "text": "문의 발송 기록",
+            "done": false
+          },
+          {
+            "text": "확정 업체",
+            "done": false
+          }
+        ],
+        "project_id": null,
+        "project_title": "연말 단과대 축제"
+      },
+      "evidence": [],
+      "inferred": true,
+      "inference_reason": "표준 업무 템플릿(지시서 5-2)",
+      "confidence": 0.5,
+      "dedupe_key": "214626695ed4eea0dc60f1d5f71a3c00c1a65cf91f61d1f952f99d2c09415e3a"
+    },
+    {
+      "kind": "new_task",
+      "project_key": "01-school-vendor.txt:P1",
+      "target_id": null,
+      "payload": {
+        "title": "홍보물 제작",
+        "description": null,
+        "lead_department": "promotion",
+        "support_departments": [],
+        "template_key": "PRO_MAKE",
+        "assignee_hint": null,
+        "assignee_ids": [],
+        "due_date": "2026-12-10",
+        "due_reason": "후속 '홍보물 게시·배포'(소요 1일) 착수 전 → 12/10",
+        "due_feasible": true,
+        "acceptance_criteria": [
+          {
+            "text": "행사 일시·장소 포함",
+            "done": false
+          },
+          {
+            "text": "최종본",
+            "done": false
+          }
+        ],
+        "project_id": null,
+        "project_title": "연말 단과대 축제"
+      },
+      "evidence": [],
+      "inferred": true,
+      "inference_reason": "표준 업무 템플릿(지시서 5-2)",
+      "confidence": 0.5,
+      "dedupe_key": "2e006f5dca98bd5e32e91c237897825b9800cfa10a457d4dfbca3ffe0258343f"
+    },
+    {
+      "kind": "new_task",
+      "project_key": "01-school-vendor.txt:P1",
+      "target_id": null,
+      "payload": {
+        "title": "홍보물 게시·배포",
+        "description": null,
+        "lead_department": "promotion",
+        "support_departments": [
+          "secretariat"
+        ],
+        "template_key": "PRO_PUBLISH",
+        "assignee_hint": null,
+        "assignee_ids": [],
+        "due_date": "2026-12-11",
+        "due_reason": "홍보물 게시: 늦어도 행사 7일 전 → 12/11",
+        "due_feasible": true,
+        "acceptance_criteria": [
+          {
+            "text": "게시 채널·일시 기록",
+            "done": false
+          }
+        ],
+        "project_id": null,
+        "project_title": "연말 단과대 축제"
+      },
+      "evidence": [],
+      "inferred": true,
+      "inference_reason": "표준 업무 템플릿(지시서 5-2)",
+      "confidence": 0.5,
+      "dedupe_key": "eb0eac2ccfe4e4fa68c535dbf4bfac4ef8fe7923e16062328cfb854a516f8820"
+    },
+    {
+      "kind": "new_task",
+      "project_key": "01-school-vendor.txt:P1",
+      "target_id": null,
+      "payload": {
+        "title": "집행 매뉴얼 작성(인력 배치·동선·역할·비상연락)",
+        "description": null,
+        "lead_department": "operations",
+        "support_departments": [
+          "planning"
+        ],
+        "template_key": "OPS_MANUAL",
+        "assignee_hint": null,
+        "assignee_ids": [],
+        "due_date": "2026-12-11",
+        "due_reason": "집행 매뉴얼: 늦어도 행사 7일 전 → 12/11",
+        "due_feasible": true,
+        "acceptance_criteria": [
+          {
+            "text": "역할표",
+            "done": false
+          },
+          {
+            "text": "동선",
+            "done": false
+          },
+          {
+            "text": "체크리스트",
+            "done": false
+          },
+          {
+            "text": "비상 대응",
+            "done": false
+          }
+        ],
+        "project_id": null,
+        "project_title": "연말 단과대 축제"
+      },
+      "evidence": [],
+      "inferred": true,
+      "inference_reason": "표준 업무 템플릿(지시서 5-2)",
+      "confidence": 0.5,
+      "dedupe_key": "9e66126393322bf69b50c58cb1de15bc42f2e6eac0bb8f217cd0043849b1b8e0"
+    },
+    {
+      "kind": "new_task",
+      "project_key": "01-school-vendor.txt:P1",
+      "target_id": null,
+      "payload": {
+        "title": "행사별 구입 리스트 정리",
+        "description": null,
+        "lead_department": "finance",
+        "support_departments": [
+          "planning",
+          "operations"
+        ],
+        "template_key": "FIN_PURCHASE_LIST",
+        "assignee_hint": null,
+        "assignee_ids": [],
+        "due_date": "2026-12-14",
+        "due_reason": "후속 '최종 구입 진행'(소요 1일) 착수 전 → 12/14",
+        "due_feasible": true,
+        "acceptance_criteria": [
+          {
+            "text": "품목·수량·단가·재원",
+            "done": false
+          }
+        ],
+        "project_id": null,
+        "project_title": "연말 단과대 축제"
+      },
+      "evidence": [],
+      "inferred": true,
+      "inference_reason": "표준 업무 템플릿(지시서 5-2)",
+      "confidence": 0.5,
+      "dedupe_key": "bb3ed02c26f0f10378f11cafaf88ef5e349e2777996d9bed80ed9f3385ce0a20"
+    },
+    {
+      "kind": "new_task",
+      "project_key": "01-school-vendor.txt:P1",
+      "target_id": null,
+      "payload": {
+        "title": "최종 구입 진행",
+        "description": null,
+        "lead_department": "finance",
+        "support_departments": [],
+        "template_key": "FIN_PURCHASE",
+        "assignee_hint": null,
+        "assignee_ids": [],
+        "due_date": "2026-12-15",
+        "due_reason": "최종 구입: 늦어도 행사 3일 전 → 12/15",
+        "due_feasible": true,
+        "acceptance_criteria": [
+          {
+            "text": "구입 완료",
+            "done": false
+          },
+          {
+            "text": "영수증 확보",
+            "done": false
+          }
+        ],
+        "project_id": null,
+        "project_title": "연말 단과대 축제"
+      },
+      "evidence": [],
+      "inferred": true,
+      "inference_reason": "표준 업무 템플릿(지시서 5-2)",
+      "confidence": 0.5,
+      "dedupe_key": "fd5aabf2ceeca211cf6204aa1ee063e536e076cc4b65fdff3efa269dd30c6b84"
+    },
+    {
+      "kind": "new_task",
+      "project_key": "01-school-vendor.txt:P1",
+      "target_id": null,
+      "payload": {
+        "title": "행사 당일 집행",
+        "description": null,
+        "lead_department": "operations",
+        "support_departments": [
+          "planning",
+          "finance",
+          "secretariat",
+          "promotion"
+        ],
+        "template_key": "OPS_EXECUTE",
+        "assignee_hint": null,
+        "assignee_ids": [],
+        "due_date": "2026-12-18",
+        "due_reason": "행사 당일(12/18) → 12/18",
+        "due_feasible": true,
+        "acceptance_criteria": [
+          {
+            "text": "매뉴얼대로 집행",
+            "done": false
+          }
+        ],
+        "project_id": null,
+        "project_title": "연말 단과대 축제"
+      },
+      "evidence": [],
+      "inferred": true,
+      "inference_reason": "표준 업무 템플릿(지시서 5-2)",
+      "confidence": 0.5,
+      "dedupe_key": "9b451aaf31cbfdc27e4b0c11b6f3a873895571da490246c1cbb96aeefce2294e"
+    },
+    {
+      "kind": "new_task",
+      "project_key": "01-school-vendor.txt:P1",
+      "target_id": null,
+      "payload": {
+        "title": "현장 사진·수혜자 명단 수집",
+        "description": null,
+        "lead_department": "operations",
+        "support_departments": [
+          "planning"
+        ],
+        "template_key": "OPS_EVIDENCE",
+        "assignee_hint": null,
+        "assignee_ids": [],
+        "due_date": "2026-12-19",
+        "due_reason": "행사 후 1일 안에 사진·명단 수집 → 12/19",
+        "due_feasible": true,
+        "acceptance_criteria": [
+          {
+            "text": "행사 사진",
+            "done": false
+          },
+          {
+            "text": "수혜자 명단(필요 시)",
+            "done": false
+          }
+        ],
+        "project_id": null,
+        "project_title": "연말 단과대 축제"
+      },
+      "evidence": [],
+      "inferred": true,
+      "inference_reason": "표준 업무 템플릿(지시서 5-2)",
+      "confidence": 0.5,
+      "dedupe_key": "c27a834bf556a8cc012ca3b50cdaa35d324fdc97bf1daa0a9187761572118f35"
+    }
+  ]
+}

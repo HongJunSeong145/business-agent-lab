@@ -36,13 +36,15 @@
   - **무료 DB는 보존 기간 제한이 있어 데이터가 삭제될 수 있습니다.** 계속 쓸 데이터라면 Render 대시보드에서 DB 플랜을 유료로 바꾸세요.
 - 정확한 요금·제한은 Render 요금표에서 확인하세요.
 
-### AI 켜기 (OpenRouter)
+### AI 켜기 (Anthropic 권장 / OpenRouter 선택)
 1. Render 대시보드 → `kgb-agent` → **Environment**에서
-   - `OPENROUTER_API_KEY`: OpenRouter 키 입력 (값은 화면에서 가려져 표시됩니다. **저장소·코드에는 절대 넣지 마세요.**)
-   - `AI_PROVIDER`: `openrouter` 로 변경
-   - (선택) `LLM_MODEL`: 쓸 모델 ID, `AI_DAILY_BUDGET_KRW` 는 설정 화면의 일일 예산
+   - `ANTHROPIC_API_KEY`: Anthropic 키 입력 (값은 화면에서 가려져 표시됩니다. **저장소·코드에는 절대 넣지 마세요.**)
+   - `AI_PROVIDER`: `anthropic` 으로 변경
+   - (선택) `LLM_MODEL`: 비우면 `claude-opus-5-5`. 비용을 줄이려면 `claude-sonnet-5-5`
+   - OpenRouter를 쓰려면 대신 `OPENROUTER_API_KEY` + `AI_PROVIDER=openrouter`
+   - 일일 예산은 설정 화면에서 조정(회의록 1건 분석 약 140~170원, Opus 5.5 기준)
 2. 저장하면 자동으로 다시 시작됩니다. 상단의 "AI 일시 사용 불가" 표시가 사라지면 켜진 것입니다.
-3. 키를 채팅·메일 등으로 주고받았다면, OpenRouter에서 **새 키를 발급해 교체**하고 이전 키는 삭제하는 것을 권장합니다.
+3. 키를 채팅·메일 등으로 주고받았다면, Anthropic 콘솔(또는 OpenRouter)에서 **새 키를 발급해 교체**하고 이전 키는 삭제하는 것을 권장합니다.
 
 ### 데모 데이터를 넣고 싶을 때
 Render 대시보드 → `kgb-agent` → **Shell**에서:

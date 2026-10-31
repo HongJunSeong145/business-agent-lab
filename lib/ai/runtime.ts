@@ -6,7 +6,7 @@ import { MOCK_HANDLERS } from "./mock";
 export function getProvider(): AiProvider {
   const e = env();
   return createProvider(
-    { APP_ENV: e.APP_ENV, AI_PROVIDER: e.AI_PROVIDER, OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY, LLM_MODEL: process.env.LLM_MODEL },
+    { APP_ENV: e.APP_ENV, AI_PROVIDER: e.AI_PROVIDER, OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY, ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY, LLM_MODEL: process.env.LLM_MODEL },
     MOCK_HANDLERS,
     { referer: process.env.AUTH_URL ?? process.env.RENDER_EXTERNAL_URL },
   );
