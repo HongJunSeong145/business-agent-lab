@@ -47,7 +47,7 @@ function EventContent({ event }: EventContentArg) {
       {t ? <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: t.base, boxShadow: `0 0 0 1px ${t.ink}55` }} /> : null}
       {!i.feasible ? <AlertTriangle aria-label="일정 불가" className="h-3 w-3 shrink-0 text-danger" /> : null}
       <span className="truncate">{i.title}</span>
-      {i.kind === "deadline" && i.state === "proposed" ? <span className="shrink-0 rounded border border-dashed px-0.5 text-[9px]">제안</span> : null}
+      {i.ghost ? <span className="shrink-0 rounded border border-dashed px-0.5 text-[9px]">AI 제안</span> : i.kind === "deadline" && i.state === "proposed" ? <span className="shrink-0 rounded border border-dashed px-0.5 text-[9px]">제안</span> : null}
     </span>
   );
 }
@@ -85,6 +85,10 @@ export default function QuarterCalendarInner({
   const onClick = (a: EventClickArg) => {
     const i = a.event.extendedProps as CalendarItem;
     if (!i.link) return;
+    if (i.link.type === "review") {
+      router.push("/review");
+      return;
+    }
     const next = new URLSearchParams(params);
     next.delete("task");
     next.delete("project");
@@ -158,7 +162,7 @@ export default function QuarterCalendarInner({
           eventContent={(a) => <EventContent {...a} />}
           eventClassNames={(a) => {
             const i = a.event.extendedProps as CalendarItem;
-            return [i.state === "proposed" ? "kgb-proposed" : "kgb-confirmed", `kgb-${i.kind}`];
+            return [i.state === "proposed" ? "kgb-proposed" : "kgb-confirmed", `kgb-${i.kind}`, ...(i.ghost ? ["kgb-ghost"] : [])];
           }}
           eventClick={onClick}
           editable

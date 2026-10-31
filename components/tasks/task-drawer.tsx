@@ -264,6 +264,27 @@ export function TaskDrawerBody({ id, onTitle }: { id: string; onTitle: (t: strin
               ) : null}
             </dd>
 
+            {!d.permissions.edit && d.permissions.progress && !t.is_completed && !cancelled ? (
+              <>
+                <dt className="text-muted">마감 변경</dt>
+                <dd>
+                  <form
+                    className="flex flex-wrap items-center gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const fd = new FormData(e.currentTarget);
+                      void run(() => api(`/api/tasks/${id}/deadline-request`, { body: { due_date: fd.get("req_due"), reason: fd.get("req_reason") } }), "마감 변경을 요청했습니다. 국장이 검토합니다.");
+                      e.currentTarget.reset();
+                    }}
+                  >
+                    <Input name="req_due" type="date" aria-label="요청할 마감일" required className="h-8 w-40" />
+                    <Input name="req_reason" aria-label="요청 사유" placeholder="사유(선택)" className="h-8 w-40" />
+                    <Button size="sm" variant="secondary" type="submit">변경 요청</Button>
+                  </form>
+                </dd>
+              </>
+            ) : null}
+
             <dt className="text-muted">담당자</dt>
             <dd>{t.assignees.length ? t.assignees.map((a) => a.user.display_name).join(", ") : "미정"}</dd>
           </dl>

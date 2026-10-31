@@ -53,6 +53,7 @@ export async function loadDashboard(termId: string) {
     prisma.contactRow.findMany({ where: { term_id: termId, deleted_at: null }, orderBy: { display_order: "asc" } }),
   ]);
 
+  const ghostProposals = await prisma.proposal.findMany({ where: { term_id: termId, status: "pending", kind: "new_task" } });
   const milestones = await prisma.scheduleEvent.findMany({
     where: { term_id: termId, start: { gte: new Date(`${today}T00:00:00Z`), lte: new Date(`${in30}T00:00:00Z`) }, project: { status: { not: "cancelled" } } },
     include: { project: { select: { title: true } } },
@@ -134,6 +135,21 @@ export async function loadDashboard(termId: string) {
         feasible: !e.title.includes("일정 불가"),
         projectTitle: e.project?.title ?? null,
       })),
+      // 아직 승인 전 AI 제안 마감 (D2 — 검토 화면에서 승인)
+      ...ghostProposals
+        .map((p) => ({ p, pl: p.payload as { title?: string; due_date?: string | null; lead_department?: string; due_feasible?: boolean; project_title?: string | null } }))
+        .filter(({ pl }) => pl.due_date && pl.due_date >= today && pl.due_date <= in30)
+        .map(({ p, pl }) => ({
+          id: p.id,
+          kind: "proposal" as const,
+          title: pl.title ?? "AI 제안",
+          due: pl.due_date!,
+          dueState: "proposed" as const,
+          leadCode: (pl.lead_department ?? null) as DepartmentCode | null,
+          assignees: [],
+          feasible: pl.due_feasible !== false,
+          projectTitle: pl.project_title ?? null,
+        })),
     ].sort((a, b) => a.due.localeCompare(b.due)),
     nextProject: nextProject
       ? { id: nextProject.id, title: nextProject.title, event_start: nextProject.event_start, funding: nextProject.funding_sources.map((f) => (f.source === "school" ? "교비" : "학생회비")) }

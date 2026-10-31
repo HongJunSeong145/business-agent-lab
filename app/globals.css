@@ -95,3 +95,4 @@ html, body {
 .kgb-calendar .fc .kgb-confirmed { border-style: solid; }
 .kgb-calendar .fc .kgb-event_day { border-width: 2px; }
 .kgb-calendar .fc .fc-day-other { background: var(--bg); }
+.kgb-calendar .fc .kgb-ghost { opacity: 0.55; background-image: repeating-linear-gradient(135deg, transparent 0 4px, rgba(0,0,0,0.04) 4px 8px); }

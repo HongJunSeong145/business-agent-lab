@@ -26,7 +26,7 @@
 | `DATABASE_URL` | Render DB 연결 문자열 | 자동 연결 |
 | `AUTH_SECRET`, `FILE_URL_SECRET` | 무작위 생성 | 자동 생성 |
 | `APP_ENV` | `staging` | 화면 상단에 "테스트 환경 — 실제 데이터 입력 금지" 띠 표시. 실제 운영으로 쓸 때 `production`으로 변경 |
-| `AI_PROVIDER` | `none` | AI 기능 끔(수동 기능은 정상). AI는 Phase 5부터 — 그때 `anthropic` + `ANTHROPIC_API_KEY` 입력 |
+| `AI_PROVIDER` | `none` | AI 기능 끔(수동 기능은 정상). AI를 켜려면 아래 "AI 켜기" 참고 |
 | `STORAGE_DRIVER` | `db` | 업로드 파일을 DB에 저장(별도 스토리지 계정 불필요) |
 | `WORKER_MODE` | `inline` | 백그라운드 작업을 웹 서비스 안에서 실행(서비스 1개로 운영) |
 
@@ -35,6 +35,14 @@
   - 무료 웹 서비스는 한동안 접속이 없으면 잠들고, 다음 접속 때 깨어나느라 수십 초 걸립니다.
   - **무료 DB는 보존 기간 제한이 있어 데이터가 삭제될 수 있습니다.** 계속 쓸 데이터라면 Render 대시보드에서 DB 플랜을 유료로 바꾸세요.
 - 정확한 요금·제한은 Render 요금표에서 확인하세요.
+
+### AI 켜기 (OpenRouter)
+1. Render 대시보드 → `kgb-agent` → **Environment**에서
+   - `OPENROUTER_API_KEY`: OpenRouter 키 입력 (값은 화면에서 가려져 표시됩니다. **저장소·코드에는 절대 넣지 마세요.**)
+   - `AI_PROVIDER`: `openrouter` 로 변경
+   - (선택) `LLM_MODEL`: 쓸 모델 ID, `AI_DAILY_BUDGET_KRW` 는 설정 화면의 일일 예산
+2. 저장하면 자동으로 다시 시작됩니다. 상단의 "AI 일시 사용 불가" 표시가 사라지면 켜진 것입니다.
+3. 키를 채팅·메일 등으로 주고받았다면, OpenRouter에서 **새 키를 발급해 교체**하고 이전 키는 삭제하는 것을 권장합니다.
 
 ### 데모 데이터를 넣고 싶을 때
 Render 대시보드 → `kgb-agent` → **Shell**에서:

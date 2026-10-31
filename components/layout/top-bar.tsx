@@ -7,6 +7,7 @@ import { can, isLeader, ROLE_LABEL } from "@/lib/auth/can";
 import type { SessionUser } from "@/lib/auth/session";
 import { UserMenu } from "./user-menu";
 import { MainNav } from "./main-nav";
+import { aiAvailable } from "@/lib/ai/runtime";
 
 /** 상단 고정 바 (8-1) */
 export async function TopBar({ user }: { user: SessionUser }) {
@@ -37,10 +38,15 @@ export async function TopBar({ user }: { user: SessionUser }) {
         </div>
 
         <div className="ml-auto flex items-center gap-1.5">
-          {isLeader(user) ? (
-            <span className="hidden rounded-lg border border-border px-2.5 py-1 text-xs text-muted sm:inline" title="AI 제안 검토 화면은 Phase 5에서 제공됩니다">
-              검토 대기 <strong className="tabular text-text">{pending}</strong>
+          {!aiAvailable() ? (
+            <span className="hidden rounded-lg border border-dashed border-border px-2.5 py-1 text-xs text-muted sm:inline" data-testid="ai-off" title="AI 키가 없거나 꺼져 있습니다. 수동 기능은 정상입니다.">
+              AI 일시 사용 불가
             </span>
+          ) : null}
+          {isLeader(user) ? (
+            <Link href="/review" className={`hidden rounded-lg border px-2.5 py-1 text-xs sm:inline ${pending ? "border-info bg-[#EEF3F8] text-info" : "border-border text-muted"}`}>
+              검토 대기 <strong className="tabular">{pending}</strong>
+            </Link>
           ) : null}
           {can(user, { type: "meeting.upload" }, settings) ? (
             <UploadMinutesDialog

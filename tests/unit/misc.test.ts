@@ -27,21 +27,21 @@ describe("AI 공급자 설정 (3-4, ADR-021)", () => {
     expect(() => assertAiConfig({ APP_ENV: "development", AI_PROVIDER: "mock" })).not.toThrow();
     expect(() => assertAiConfig({ APP_ENV: "staging", AI_PROVIDER: "none" })).not.toThrow();
   });
-  it("anthropic 인데 키 없으면 none (T25)", () => {
-    expect(resolveAiMode({ AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: undefined })).toBe("none");
-    expect(resolveAiMode({ AI_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "k" })).toBe("anthropic");
+  it("openrouter 인데 키 없으면 none (T25)", () => {
+    expect(resolveAiMode({ AI_PROVIDER: "openrouter", OPENROUTER_API_KEY: undefined })).toBe("none");
+    expect(resolveAiMode({ AI_PROVIDER: "openrouter", OPENROUTER_API_KEY: "k" })).toBe("openrouter");
   });
   it("none 공급자는 AI 사용 불가 오류", async () => {
     const p = createProvider({ APP_ENV: "staging", AI_PROVIDER: "none" });
     expect(p).toBeInstanceOf(NoneProvider);
     expect(p.available).toBe(false);
-    await expect(p.complete({ agent: "a1", system: "", prompt: "" })).rejects.toBeInstanceOf(AiUnavailableError);
+    await expect(p.complete({ agent: "a1", system: "", prompt: "", schema: {} })).rejects.toBeInstanceOf(AiUnavailableError);
   });
-  it("mock 공급자는 픽스처로 결정적 응답", async () => {
-    const p = createProvider({ APP_ENV: "test", AI_PROVIDER: "mock" }, { a1: '{"ok":true}' });
+  it("mock 공급자는 처리 함수로 결정적 응답", async () => {
+    const p = createProvider({ APP_ENV: "test", AI_PROVIDER: "mock" }, { a1: () => ({ ok: true }) });
     expect(p).toBeInstanceOf(MockProvider);
-    expect((await p.complete({ agent: "a1", system: "", prompt: "" })).text).toBe('{"ok":true}');
-    await expect(p.complete({ agent: "x", system: "", prompt: "" })).rejects.toThrow(/픽스처 없음/);
+    expect((await p.complete({ agent: "a1", system: "", prompt: "", schema: {} })).json).toEqual({ ok: true });
+    await expect(p.complete({ agent: "x", system: "", prompt: "", schema: {} })).rejects.toThrow(/처리 함수 없음/);
   });
 });
 

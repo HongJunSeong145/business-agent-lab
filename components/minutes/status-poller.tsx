@@ -7,7 +7,7 @@ import { useEffect } from "react";
 export function StatusPoller({ meetingId, status }: { meetingId: string; status: string }) {
   const router = useRouter();
   useEffect(() => {
-    if (status !== "uploaded" && status !== "extracting") return;
+    if (status !== "uploaded" && status !== "extracting" && status !== "analyzing") return;
     const t = setInterval(async () => {
       const r = await fetch(`/api/meetings/${meetingId}/status`, { cache: "no-store" }).catch(() => null);
       if (!r?.ok) return;

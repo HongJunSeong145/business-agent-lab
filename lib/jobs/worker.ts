@@ -2,6 +2,10 @@ import { prisma } from "@/lib/db";
 import { getStorage } from "@/lib/storage";
 import { dispatchJob, getBoss, QUEUES } from "./queue";
 import { runExtractJob } from "./extract";
+import { runAnalyzeJob, runProposeJob } from "@/lib/ai/agents";
+import { getProvider } from "@/lib/ai/runtime";
+import { enqueueAnalysisAfterExtract } from "@/lib/services/analysis";
+import { todayKst } from "@/lib/clock";
 
 const g = globalThis as unknown as { kgbWorker?: Promise<void>; kgbSweeper?: NodeJS.Timeout };
 
@@ -10,6 +14,11 @@ export async function sweepStaleJobs(now = new Date()): Promise<number> {
   await prisma.aiJob.updateMany({
     where: { status: "running", started_at: { lt: new Date(now.getTime() - 10 * 60_000) } },
     data: { status: "queued" },
+  });
+  // 예산 대기 작업은 다음 날(KST) 다시 줄 세운다
+  await prisma.aiJob.updateMany({
+    where: { status: "waiting_budget", updated_at: { lt: new Date(`${todayKst()}T00:00:00+09:00`) } },
+    data: { status: "queued", updated_at: new Date(0) },
   });
   const stale = await prisma.aiJob.findMany({
     where: { status: "queued", updated_at: { lt: new Date(now.getTime() - 60_000) } },
@@ -26,7 +35,18 @@ async function start() {
   const boss = await getBoss();
   const storage = getStorage();
   await boss.work<{ aiJobId: string }>(QUEUES.extract, { batchSize: 1, pollingIntervalSeconds: 1 }, async ([job]) => {
-    if (job) await runExtractJob(prisma, storage, job.data.aiJobId);
+    if (!job) return;
+    const outcome = await runExtractJob(prisma, storage, job.data.aiJobId);
+    // 추출이 끝나면 AI 분석으로 이어진다(AI 를 쓸 수 없으면 회의록은 '추출 완료'로 남고 수동 기능은 그대로 — T25)
+    if (outcome === "extracted") await enqueueAnalysisAfterExtract(prisma, job.data.aiJobId);
+  });
+  await boss.work<{ aiJobId: string }>(QUEUES.analyze, { batchSize: 1, pollingIntervalSeconds: 1 }, async ([job]) => {
+    if (!job) return;
+    const r = await runAnalyzeJob(prisma, getProvider(), job.data.aiJobId);
+    if (r.nextJobId) await dispatchJob(r.nextJobId, "propose_work");
+  });
+  await boss.work<{ aiJobId: string }>(QUEUES.propose, { batchSize: 1, pollingIntervalSeconds: 1 }, async ([job]) => {
+    if (job) await runProposeJob(prisma, getProvider(), job.data.aiJobId);
   });
   g.kgbSweeper = setInterval(() => void sweepStaleJobs().catch((e) => console.error("[worker] 점검 오류:", e)), 60_000);
   g.kgbSweeper.unref();

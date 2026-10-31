@@ -2,24 +2,39 @@ import type { Env } from "@/lib/env";
 import { isDeployedEnv } from "@/lib/env";
 
 /**
- * LLM 공급자 추상화 (지시서 3-2, 6-1, ADR-010/021).
- * Phase 1: 인터페이스 + mock + none. 실제 Anthropic 구현은 Phase 5 에서 추가한다.
+ * LLM 공급자 추상화 (지시서 3-2·6-1, ADR-010·021·026).
+ *  - openrouter: OpenRouter(OpenAI 호환 Chat Completions)로 Claude 등 모델 호출. 키는 환경변수 OPENROUTER_API_KEY 에만 둔다.
+ *  - mock: 결정적 응답(테스트·개발). staging/production 에서는 시작 거부.
+ *  - none: AI 끔 — 수동 기능만(T25)
+ * 구조화 출력: 함수 호출(tool) 1개를 강제해 JSON 을 받고, 항상 zod 로 다시 검증한다(lib/ai/structured.ts).
  */
+export type JsonSchema = Record<string, unknown>;
+
 export type CompleteRequest = {
   agent: string;
   system: string;
-  /** 회의록·작업물 등 '데이터' 블록. 지시문으로 취급하지 않는다. */
-  documents?: string[];
+  /** 회의록·작업물 등 '데이터' — 지시문으로 취급하지 않는다 */
+  documents?: { name: string; content: string }[];
   prompt: string;
-  /** mock 공급자가 고를 픽스처 키 */
-  fixtureKey?: string;
+  schema: JsonSchema;
+  maxTokens?: number;
+  /** mock 공급자 전용 입력(실제 공급자는 무시) */
+  mockContext?: unknown;
 };
 
-export type CompleteResult = { text: string; model: string; inputTokens: number; outputTokens: number };
+export type CompleteResult = {
+  /** 함수 호출 인자(JSON) 또는 본문에서 찾은 JSON */
+  json: unknown;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number | null;
+};
 
 export interface AiProvider {
-  readonly name: "anthropic" | "mock" | "none";
+  readonly name: "openrouter" | "mock" | "none";
   readonly available: boolean;
+  readonly model: string;
   complete(req: CompleteRequest): Promise<CompleteResult>;
 }
 
@@ -30,47 +45,149 @@ export class AiUnavailableError extends Error {
   }
 }
 
-export type MockFixtures = Record<string, string>;
+/** 일시 오류(429·5xx·네트워크) — 큐가 재시도한다 */
+export class AiTransientError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AiTransientError";
+  }
+}
 
+export function wrapDocuments(docs: { name: string; content: string }[] = []): string {
+  return docs.map((d) => `<document name="${d.name}" kind="data">\n${d.content}\n</document>`).join("\n\n");
+}
+
+/** 본문에 섞인 JSON 을 꺼낸다(함수 호출을 안 쓰는 모델 대비) */
+export function extractJson(text: string): unknown {
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text)?.[1];
+  const candidate = fenced ?? text.slice(Math.max(0, text.indexOf("{")), text.lastIndexOf("}") + 1);
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    return null;
+  }
+}
+
+type FetchLike = typeof fetch;
+
+export class OpenRouterProvider implements AiProvider {
+  readonly name = "openrouter" as const;
+  readonly available = true;
+  constructor(
+    private readonly apiKey: string,
+    readonly model: string,
+    private readonly opts: { referer?: string; fetchImpl?: FetchLike; timeoutMs?: number } = {},
+  ) {}
+
+  async complete(req: CompleteRequest): Promise<CompleteResult> {
+    const user = [wrapDocuments(req.documents), req.prompt].filter(Boolean).join("\n\n");
+    const body = {
+      model: this.model,
+      temperature: 0,
+      max_tokens: req.maxTokens ?? 8000,
+      messages: [
+        { role: "system", content: req.system },
+        { role: "user", content: user },
+      ],
+      tools: [{ type: "function", function: { name: "submit_result", description: "결과를 스키마에 맞춰 제출", parameters: req.schema } }],
+      tool_choice: { type: "function", function: { name: "submit_result" } },
+      usage: { include: true },
+    };
+    let res: Response;
+    try {
+      res = await (this.opts.fetchImpl ?? fetch)("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+          "X-Title": "KGB_Agent",
+          ...(this.opts.referer ? { "HTTP-Referer": this.opts.referer } : {}),
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.opts.timeoutMs ?? 180_000),
+      });
+    } catch (e) {
+      throw new AiTransientError(`AI 서버에 연결하지 못했습니다: ${(e as Error).message}`);
+    }
+    if (res.status === 401 || res.status === 403) throw new AiUnavailableError("AI 키가 올바르지 않거나 권한이 없습니다.");
+    if (res.status === 402) throw new AiUnavailableError("AI 사용 크레딧이 부족합니다.");
+    if (res.status === 429 || res.status >= 500) throw new AiTransientError(`AI 서버 일시 오류(${res.status})`);
+    if (!res.ok) throw new AiUnavailableError(`AI 요청 실패(${res.status})`);
+    const data = (await res.json()) as {
+      model?: string;
+      choices?: { message?: { content?: string | null; tool_calls?: { function?: { arguments?: string } }[] } }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number };
+      error?: { message?: string };
+    };
+    if (data.error) throw new AiTransientError(`AI 응답 오류: ${data.error.message ?? "알 수 없음"}`);
+    const msg = data.choices?.[0]?.message;
+    const args = msg?.tool_calls?.[0]?.function?.arguments;
+    let json: unknown = null;
+    if (args) {
+      try {
+        json = JSON.parse(args);
+      } catch {
+        json = null;
+      }
+    }
+    if (json === null && msg?.content) json = extractJson(msg.content);
+    return {
+      json,
+      model: data.model ?? this.model,
+      inputTokens: data.usage?.prompt_tokens ?? 0,
+      outputTokens: data.usage?.completion_tokens ?? 0,
+      costUsd: typeof data.usage?.cost === "number" ? data.usage.cost : null,
+    };
+  }
+}
+
+export type MockHandler = (req: CompleteRequest) => unknown;
+
+/** 결정적 mock — 에이전트별 처리 함수(lib/ai/mock.ts) */
 export class MockProvider implements AiProvider {
   readonly name = "mock" as const;
   readonly available = true;
-  constructor(private readonly fixtures: MockFixtures = {}) {}
+  readonly model = "mock";
+  constructor(private readonly handlers: Record<string, MockHandler> = {}) {}
   async complete(req: CompleteRequest): Promise<CompleteResult> {
-    const key = req.fixtureKey ?? req.agent;
-    const text = this.fixtures[key];
-    if (text === undefined) throw new Error(`mock 픽스처 없음: ${key}`);
-    return { text, model: "mock", inputTokens: 0, outputTokens: 0 };
+    const h = this.handlers[req.agent];
+    if (!h) throw new Error(`mock 처리 함수 없음: ${req.agent}`);
+    return { json: h(req), model: "mock", inputTokens: 0, outputTokens: 0, costUsd: 0 };
   }
 }
 
 export class NoneProvider implements AiProvider {
   readonly name = "none" as const;
   readonly available = false;
+  readonly model = "none";
   async complete(): Promise<CompleteResult> {
     throw new AiUnavailableError();
   }
 }
 
-/**
- * 지시서 3-4: mock 공급자가 staging·production 에서 활성화되면 시작을 거부한다.
- * anthropic 인데 키가 없으면 none 으로 동작(수동 기능은 정상 — T25).
- */
+/** 지시서 3-4: mock 이 staging·production 에서 켜지면 시작 거부 */
 export function assertAiConfig(e: Pick<Env, "APP_ENV" | "AI_PROVIDER">): void {
   if (e.AI_PROVIDER === "mock" && isDeployedEnv(e.APP_ENV)) {
-    throw new Error(`AI_PROVIDER=mock 은 ${e.APP_ENV} 환경에서 사용할 수 없습니다. anthropic 또는 none 으로 설정하세요.`);
+    throw new Error(`AI_PROVIDER=mock 은 ${e.APP_ENV} 환경에서 사용할 수 없습니다. openrouter 또는 none 으로 설정하세요.`);
   }
 }
 
-export function resolveAiMode(e: Pick<Env, "AI_PROVIDER" | "ANTHROPIC_API_KEY">): "anthropic" | "mock" | "none" {
-  if (e.AI_PROVIDER === "anthropic") return e.ANTHROPIC_API_KEY ? "anthropic" : "none";
+/** 키가 없으면 none 으로 동작(T25) */
+export function resolveAiMode(e: Pick<Env, "AI_PROVIDER" | "OPENROUTER_API_KEY">): "openrouter" | "mock" | "none" {
+  if (e.AI_PROVIDER === "openrouter") return e.OPENROUTER_API_KEY ? "openrouter" : "none";
   return e.AI_PROVIDER;
 }
 
-export function createProvider(e: Pick<Env, "APP_ENV" | "AI_PROVIDER" | "ANTHROPIC_API_KEY">, fixtures?: MockFixtures): AiProvider {
+export const DEFAULT_MODEL = "anthropic/claude-sonnet-4.5";
+
+export function createProvider(
+  e: Pick<Env, "APP_ENV" | "AI_PROVIDER" | "OPENROUTER_API_KEY" | "LLM_MODEL">,
+  mockHandlers?: Record<string, MockHandler>,
+  opts?: { referer?: string; fetchImpl?: FetchLike },
+): AiProvider {
   assertAiConfig(e);
   const mode = resolveAiMode(e);
-  if (mode === "mock") return new MockProvider(fixtures);
-  // anthropic 구현은 Phase 5 — 그 전까지는 키가 있어도 사용 불가로 표시
+  if (mode === "mock") return new MockProvider(mockHandlers);
+  if (mode === "openrouter") return new OpenRouterProvider(e.OPENROUTER_API_KEY!, e.LLM_MODEL || DEFAULT_MODEL, opts);
   return new NoneProvider();
 }

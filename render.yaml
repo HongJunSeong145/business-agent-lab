@@ -28,8 +28,11 @@ services:
         generateValue: true
       - key: AI_PROVIDER
         value: none
-      - key: ANTHROPIC_API_KEY
+      # OpenRouter 키 — 대시보드에서만 입력(저장소에 절대 커밋 금지, Render 화면에서 가려져 표시됨)
+      - key: OPENROUTER_API_KEY
         sync: false
+      - key: LLM_MODEL
+        value: anthropic/claude-sonnet-4.5
       - key: WORKER_MODE
         value: inline
       - key: STORAGE_DRIVER
