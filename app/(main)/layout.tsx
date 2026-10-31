@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { requireUser } from "@/lib/auth/session";
 import { TopBar } from "@/components/layout/top-bar";
 import { DrawerHost } from "@/components/layout/drawer-host";
+import { Toaster } from "@/components/ui/toast";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,7 @@ export default async function MainLayout({ children }: { children: React.ReactNo
       <Suspense fallback={null}>
         <DrawerHost />
       </Suspense>
+      <Toaster />
     </>
   );
 }

@@ -13,3 +13,24 @@ export function errorResponse(e: unknown): Response {
 export function unauthorized(): Response {
   return Response.json({ error: "로그인이 필요합니다." }, { status: 401 });
 }
+
+import { getSessionUser, type SessionUser } from "@/lib/auth/session";
+
+/** 로그인 확인 + 공통 오류 처리 래퍼 */
+export async function withUser(fn: (user: SessionUser) => Promise<Response>): Promise<Response> {
+  const user = await getSessionUser();
+  if (!user) return unauthorized();
+  try {
+    return await fn(user);
+  } catch (e) {
+    return errorResponse(e);
+  }
+}
+
+export async function readJson(req: Request): Promise<unknown> {
+  try {
+    return await req.json();
+  } catch {
+    return {};
+  }
+}

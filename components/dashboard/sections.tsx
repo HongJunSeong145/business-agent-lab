@@ -3,6 +3,8 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { DemoBadge, Badge } from "@/components/common/badges";
 import { ComingSoon, EmptyState } from "@/components/common/empty-state";
 import { DeptChip } from "@/components/dept/dept-chip";
+import { ProjectProgressBar } from "@/components/projects/project-progress-bar";
+import type { ProjectProgress } from "@kgb/rules";
 import { ProgressBar } from "@/components/dept/progress-bar";
 import { DEPARTMENTS, type DepartmentCode } from "@/lib/design/tokens";
 import type { DeptCard } from "@/lib/dashboard";
@@ -135,16 +137,37 @@ export function Upcoming30({
   );
 }
 
-export function NearestProject({ project }: { project: { id: string; title: string; event_start: Date | null } | null }) {
+export function NearestProject({
+  project,
+  progress,
+  today,
+}: {
+  project: { id: string; title: string; event_start: Date | null; funding: string[] } | null;
+  progress: ProjectProgress | null;
+  today: string;
+}) {
   return (
     <Card>
       <CardTitle className="mb-3">가장 가까운 사업 진척도</CardTitle>
-      {!project ? (
-        <EmptyState title="예정된 사업이 없습니다" description="회의록을 올리거나 사업을 직접 만들면 여기에 진척도가 표시됩니다." action={<ComingSoon phase={3} label="사업 만들기" />} />
+      {!project || !progress ? (
+        <EmptyState
+          title="예정된 사업이 없습니다"
+          description="회의록을 올리거나 사업을 직접 만들면 여기에 진척도가 표시됩니다."
+          action={<Link href="/projects" className="text-sm underline">사업 공간으로</Link>}
+        />
       ) : (
-        <p className="text-sm">
-          <Link href={`?project=${project.id}`} scroll={false} className="font-medium underline">{project.title}</Link> — 국서별 구간 막대는 Phase 8에서 완성됩니다.
-        </p>
+        <div className="space-y-3">
+          <p className="flex flex-wrap items-center gap-2 text-sm">
+            <Link href={`/projects/${project.id}`} className="text-base font-semibold hover:underline">{project.title}</Link>
+            {project.event_start ? (
+              <span className="tabular text-muted">
+                {formatKoreanDate(project.event_start.toISOString().slice(0, 10))} · {dDayLabel(project.event_start.toISOString().slice(0, 10), today)}
+              </span>
+            ) : null}
+            {project.funding.map((f) => <Badge key={f}>{f}</Badge>)}
+          </p>
+          <ProjectProgressBar progress={progress} projectId={project.id} />
+        </div>
       )}
     </Card>
   );
@@ -156,11 +179,13 @@ export function DepartmentCards({ cards, today }: { cards: DeptCard[]; today: st
       {cards.map((c) => {
         const t = DEPARTMENTS[c.code];
         return (
-          <article key={c.code} className="overflow-hidden rounded-xl border border-border bg-surface" data-dept={c.code}>
+          <article key={c.code} className="relative overflow-hidden rounded-xl border border-border bg-surface hover:border-[#C9C6C0]" data-dept={c.code}>
             <div className="h-1.5" style={{ backgroundColor: t.base, boxShadow: t.fillBorder ? `inset 0 -1px 0 ${t.fillBorder}` : undefined }} />
             <div className="p-4">
               <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-sm font-semibold" style={{ color: t.ink }}>{c.name}</h3>
+                <h3 className="text-sm font-semibold" style={{ color: t.ink }}>
+                  <Link href={`/departments/${c.code}`} className="hover:underline">{c.name}</Link>
+                </h3>
                 <span className="tabular text-sm font-semibold">{Math.round(c.progress)}%</span>
               </div>
               <ProgressBar code={c.code} value={c.progress} showValue={false} />
