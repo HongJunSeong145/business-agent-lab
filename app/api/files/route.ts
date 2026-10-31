@@ -69,7 +69,8 @@ export async function GET(req: Request) {
       "Content-Length": String(data.byteLength),
       "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(name)}`,
       "X-Content-Type-Options": "nosniff",
-      "Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'; object-src 'self'",
+      // PDF 는 브라우저 내장 뷰어(자체 격리)가 sandbox 정책에서 열리지 않으므로 sandbox 만 뺀다
+      "Content-Security-Policy": `${mime === "application/pdf" ? "" : "sandbox; "}default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; media-src 'self'; object-src 'self'; frame-ancestors 'self'`,
       "Cache-Control": "private, no-store",
     },
   });

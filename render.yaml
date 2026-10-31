@@ -26,16 +26,11 @@ services:
         generateValue: true
       - key: FILE_URL_SECRET
         generateValue: true
+      # AI: anthropic 으로 두면 ANTHROPIC_API_KEY 를 넣는 순간 켜지고, 비워 두면 자동으로 꺼진 채(수동 기능만) 동작
       - key: AI_PROVIDER
-        value: none
-      # AI 키 — 대시보드에서만 입력(저장소에 절대 커밋 금지, Render 화면에서 가려져 표시됨)
-      # AI_PROVIDER=anthropic + ANTHROPIC_API_KEY (권장) 또는 AI_PROVIDER=openrouter + OPENROUTER_API_KEY
+        value: anthropic
+      # AI 키 — Render 화면에서만 입력(저장소에 절대 커밋 금지, 화면에서 가려져 표시됨). 처음엔 비워 둬도 됩니다.
       - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: OPENROUTER_API_KEY
-        sync: false
-      # 비워 두면 공급자별 기본 모델(anthropic: claude-opus-5-5)
-      - key: LLM_MODEL
         sync: false
       - key: WORKER_MODE
         value: inline
@@ -47,6 +42,12 @@ services:
       - key: INITIAL_ADMIN_EMAIL
         sync: false
       - key: INITIAL_ADMIN_PASSWORD
+        sync: false
+      # 체험용 가상 데이터(가상 회원 11명·연락처·사업 2개·회의록 2건)를 처음 한 번만 넣음
+      - key: SEED_DEMO
+        value: "true"
+      # 데모 계정(예: promotion.member@demo.kgb.invalid)으로 로그인해 국원 화면을 보려면 비밀번호 입력(10자 이상, 선택)
+      - key: SEED_DEMO_PASSWORD
         sync: false
 
 databases:
