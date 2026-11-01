@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { withUser } from "@/lib/api";
 import { listDeletedTasks } from "@/lib/services/tasks";
 import { listDeletedProjects } from "@/lib/services/projects";
+import { listDismissedEvents } from "@/lib/services/schedule-events";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,11 @@ export async function GET(req: Request) {
     const sp = new URL(req.url).searchParams;
     const projectId = sp.get("project") ?? undefined;
     const deptCode = sp.get("dept") ?? undefined;
-    const [tasks, projects] = await Promise.all([listDeletedTasks(prisma, u, { projectId, deptCode }), projectId || deptCode ? Promise.resolve([]) : listDeletedProjects(prisma, u)]);
-    return Response.json({ tasks, projects }, { headers: { "Cache-Control": "no-store" } });
+    const [tasks, projects, events] = await Promise.all([
+      listDeletedTasks(prisma, u, { projectId, deptCode }),
+      projectId || deptCode ? Promise.resolve([]) : listDeletedProjects(prisma, u),
+      deptCode ? Promise.resolve([]) : listDismissedEvents(prisma, u, projectId),
+    ]);
+    return Response.json({ tasks, projects, events }, { headers: { "Cache-Control": "no-store" } });
   });
 }

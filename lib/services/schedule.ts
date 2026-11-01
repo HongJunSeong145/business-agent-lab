@@ -59,6 +59,8 @@ export type ProjectScheduleView = {
   existingKeys: TemplateKey[];
   conflicts: { key: TemplateKey; title: string; confirmed: string; latest: string }[];
   evidence: ReturnType<typeof evidenceRequirements>;
+  /** 캘린더·30일 일정에 올라간 행정실 송부 마감 항목(삭제됨이면 state=dismissed) */
+  milestoneEvent?: { id: string; state: string } | null;
 };
 
 /** 사업 일정 점검(미리보기) — 쓰기 없음 */
@@ -72,7 +74,8 @@ export async function getProjectSchedule(db: Db, actor: ActorT, projectId: strin
   if (!input) return { hasEventDate: false, result: null, existingKeys, conflicts: [], evidence };
   const confirmed = input.fixed ?? {};
   const conflicts = deadlineConflicts(confirmed, { ...input }).map((c) => ({ ...c, title: TEMPLATES[c.key].title }));
-  return { hasEventDate: true, result: computeSchedule(input), existingKeys, conflicts, evidence };
+  const ev = await db.scheduleEvent.findFirst({ where: { project_id: projectId, rule_key: "SCHOOL_SUBMIT" }, select: { id: true, state: true } });
+  return { hasEventDate: true, result: computeSchedule(input), existingKeys, conflicts, evidence, milestoneEvent: ev };
 }
 
 async function syncMilestone(tx: Tx, termId: string, projectId: string, result: ScheduleResult) {

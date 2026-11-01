@@ -7,7 +7,7 @@ import { api } from "@/lib/client-api";
 import { toast } from "@/components/ui/toast";
 import { emitChanged, useLive } from "@/components/layout/live-refresh";
 
-type Data = { tasks: { id: string; title: string; deleted_at: string; project: { id: string; title: string } | null }[]; projects: { id: string; title: string; deleted_at: string }[] };
+type Data = { events?: { id: string; title: string; start: string; project: { id: string; title: string } | null }[]; tasks: { id: string; title: string; deleted_at: string; project: { id: string; title: string } | null }[]; projects: { id: string; title: string; deleted_at: string }[] };
 const when = (s: string) => new Date(s).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
 /** 최근 삭제한 사업·업무 — 되살리기(연결된 선후관계·차단·진척도·캘린더 함께 복원) */
@@ -26,7 +26,8 @@ export function TrashPanel({ query = "" }: { query?: string }) {
     return () => clearTimeout(t);
   }, [load]);
   useLive(() => void load());
-  if (!data || (data.tasks.length === 0 && data.projects.length === 0)) return null;
+  const events = data?.events ?? [];
+  if (!data || (data.tasks.length === 0 && data.projects.length === 0 && events.length === 0)) return null;
   const restore = async (url: string, label: string) => {
     try {
       await api(url, { body: {} });
@@ -40,7 +41,7 @@ export function TrashPanel({ query = "" }: { query?: string }) {
   };
   return (
     <details className="rounded-lg border border-border bg-surface px-4 py-2 text-sm" data-testid="trash-panel">
-      <summary className="cursor-pointer text-muted">최근 삭제 {data.projects.length + data.tasks.length}건 — 되살리기</summary>
+      <summary className="cursor-pointer text-muted">최근 삭제 {data.projects.length + data.tasks.length + events.length}건 — 되살리기</summary>
       <ul className="mt-2 divide-y divide-border">
         {data.projects.map((p) => (
           <li key={p.id} className="flex items-center gap-2 py-1.5">
@@ -48,6 +49,14 @@ export function TrashPanel({ query = "" }: { query?: string }) {
             <span className="min-w-0 flex-1 truncate">{p.title}</span>
             <span className="text-xs text-muted">{when(p.deleted_at)}</span>
             <button className="inline-flex items-center gap-1 underline" onClick={() => void restore(`/api/projects/${p.id}/restore`, p.title)} aria-label={`되살리기: ${p.title}`}><RotateCcw className="h-3.5 w-3.5" />되살리기</button>
+          </li>
+        ))}
+        {events.map((e) => (
+          <li key={e.id} className="flex items-center gap-2 py-1.5">
+            <span className="rounded bg-bg px-1.5 text-xs">일정</span>
+            <span className="min-w-0 flex-1 truncate">{e.title}{e.project ? <span className="text-xs text-muted"> · {e.project.title}</span> : null}</span>
+            <span className="text-xs text-muted">{e.start.slice(0, 10)}</span>
+            <button className="inline-flex items-center gap-1 underline" onClick={() => void restore(`/api/schedule-events/${e.id}/restore`, e.title)} aria-label={`되살리기: ${e.title}`}><RotateCcw className="h-3.5 w-3.5" />되살리기</button>
           </li>
         ))}
         {data.tasks.map((t) => (

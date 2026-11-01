@@ -93,3 +93,37 @@ test("사업 삭제 → 사업 목록 '최근 삭제'에서 되살리기(업무 
   await expect(page.getByRole("link", { name: PROJECT })).toBeVisible();
   expect(Number((await sql<{ n: string }>("SELECT count(*) n FROM tasks WHERE project_id = $1 AND deleted_at IS NULL", [pid]))[0]!.n)).toBe(before);
 });
+
+test("대시보드 30일 일정: 행정실 송부 마감(일정 항목) 바로 삭제 → 캘린더에서도 빠짐 → 되돌리기 / 업무 삭제는 국서 공간에도 반영", async ({ page }) => {
+  await loginOk(page, E2E.adminEmail, E2E.adminPassword);
+  const r = await page.request.post("/api/projects", { data: { title: "E2E 교비 축제", event_start: "2026-12-18", funding: [{ source: "school", amount_planned: 1000000 }] } });
+  const pid = ((await r.json()) as { id: string }).id;
+  expect((await page.request.post(`/api/projects/${pid}/template`, { data: { keys: ["PLN_DRAFT"] } })).status()).toBe(201);
+  const t = await page.request.post("/api/tasks", { data: { title: "E2E 30일 포스터", lead_department_id: await deptId("promotion"), project_id: pid, due_date: "2026-11-15" } });
+  expect(t.status()).toBe(201);
+
+  await page.goto("/");
+  const list = page.getByTestId("upcoming-list");
+  const ms = list.locator("li", { hasText: "E2E 교비 축제" }).filter({ hasText: "행정실 송부 마감" });
+  await expect(ms).toBeVisible();
+  await ms.getByRole("button", { name: /행정실 송부 마감.* 삭제/ }).click();
+  await expect(ms).toBeHidden();
+  expect((await sql<{ state: string }>("SELECT state FROM schedule_events WHERE project_id = $1", [pid]))[0]!.state).toBe("dismissed");
+  await page.getByRole("button", { name: "되돌리기" }).click();
+  await expect(ms).toBeVisible();
+  await ms.getByRole("button", { name: /행정실 송부 마감.* 삭제/ }).click();
+  await expect(ms).toBeHidden();
+
+  // 업무를 30일 일정에서 삭제 → 국서 공간에서도 사라짐
+  await list.locator("li", { hasText: "E2E 30일 포스터" }).getByRole("button", { name: "E2E 30일 포스터 삭제" }).click();
+  await expect(list.locator("li", { hasText: "E2E 30일 포스터" })).toBeHidden();
+  await page.goto("/departments/promotion");
+  await expect(page.getByRole("link", { name: "E2E 30일 포스터", exact: true })).toBeHidden();
+  // 사업 화면: 송부 마감은 '삭제됨 · 되살리기', 최근 삭제에도 일정이 있음
+  await page.goto(`/projects/${pid}`);
+  await expect(page.getByTestId("schedule-panel")).toContainText("캘린더·30일 일정에서 삭제됨");
+  const trash = page.getByTestId("trash-panel");
+  await trash.locator("summary").click();
+  await expect(trash).toContainText("행정실 송부 마감");
+  await expect(trash).toContainText("E2E 30일 포스터");
+});
