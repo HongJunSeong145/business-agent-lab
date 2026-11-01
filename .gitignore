@@ -12,3 +12,6 @@ next-env.d.ts
 .env.local
 .env.*.local
 .DS_Store
+
+# AI 품질 점검 결과물(원본 AI 출력·이미지)은 저장소에 올리지 않는다
+tests/ai-eval/20*/

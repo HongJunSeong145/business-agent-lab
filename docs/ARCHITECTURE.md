@@ -298,4 +298,4 @@ sequenceDiagram
 - 통합: 서비스 함수 + 테스트 DB, AI는 mock 픽스처. 승인 트랜잭션·dedupe·순환 검사·blocked 해제.
 - E2E: Playwright로 T1~T26 핵심 흐름(로그인 → 업로드 → 검토 → 국서 공간 → 업로드 → 완료).
 - AI 품질: 샘플 회의록 3종을 실제 모델로 실행 → `tests/ai-eval/<날짜>/` 리포트(사람 확인용 체크리스트).
-- 각 Phase 종료 시 `docs/PROGRESS.md`에 테스트 결과 기록.
+- 각 Phase 종료 시 테스트 결과를 커밋 메시지에 기록.

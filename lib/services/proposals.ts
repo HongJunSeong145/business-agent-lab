@@ -13,6 +13,9 @@ import { notifyLeaders } from "./notifications";
  * AI 제안 검토·승인 (8-4, PART 7 단계 7·8): 승인한 항목만 한 트랜잭션으로 실제 사업·업무가 된다.
  *  - 수정 후 승인 → edited_approved, 수정한 마감은 확정(D2), 수정 없이 승인한 마감은 제안 유지(N4)
  *  - 새 사업 제안이 승인되지 않으면 그 사업의 업무 제안도 승인할 수 없다
+ *  - 처리 순서: 새 사업 → 사업 변경 → 업무 취소 → 업무 변경 → 새 업무 → 직접 추가 업무 → 마감 변경
+ *  - 대상 업무·사업이 그사이 삭제됐으면 그 항목만 건너뛴다(나머지는 승인)
+ *  - 끝나면 선후관계 연결 → 차단 상태·제안 마감 재계산 → 사업 완료 상태 갱신
  */
 type ActorT = Actor & { termId: string };
 type Tx = Prisma.TransactionClient;

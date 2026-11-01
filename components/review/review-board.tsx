@@ -30,7 +30,11 @@ const fmt = (v: unknown) =>
     ? v.map((x) => (x === "school" ? "교비" : x === "student_fee" ? "학생회비" : DEPT_KO[x as string] ?? x)).join("·") || "없음"
     : v === true ? "이용" : v === false ? "없음" : v === null || v === undefined ? "없음" : DEPT_KO[String(v)] ?? String(v);
 
-/** AI 제안 검토 (8-4): 항목별 체크·수정 → 선택 승인 / 모두 거절 */
+/**
+ * AI 제안 검토 화면 (8-4): 회의록별 → 사업별 → 국서별(기획·재정·사무·홍보·집행) 구역.
+ * 구역마다 이번 제안(체크·업무명·국서·마감 수정), 이미 배정된 업무(바로 수정·삭제), 직접 추가 업무를 함께 보여 주고
+ * '선택 승인' 한 번으로 승인·직접 추가를 같이 처리한다.
+ */
 type Manual = { tmp: string; projectKey: string | null; title: string; dept: DepartmentCode; due: string | null };
 
 export function ReviewBoard({ groups, deptIds = {} }: { groups: ReviewGroup[]; deptIds?: Record<string, string> }) {

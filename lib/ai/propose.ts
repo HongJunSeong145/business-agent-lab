@@ -1,14 +1,16 @@
 import { createHash } from "node:crypto";
 import type { Prisma } from "@/lib/generated/prisma/client";
-import { computeSchedule, TEMPLATES, templateFor, type FundingSource, type RuleParams, type TemplateKey } from "@kgb/rules";
+import { computeSchedule, TEMPLATES, type FundingSource, type RuleParams, type TemplateKey } from "@kgb/rules";
 import type { A2Output } from "./schemas/a2";
 
 /**
- * A2 결과 + 규칙 엔진(A3 마감 역산, A4 재원별 필수 업무) → proposals 행 (6-2, 6-4, D8·D9).
- *  - 회의록 근거가 있는 항목은 inferred=false, 템플릿에서 덧붙인 항목은 inferred=true(검토 화면에서 기본 체크 해제)
- *  - 마감: 회의록에 명시된 기한 > 규칙 엔진 계산값 (충돌 해소 우선순위 6-4)
- *  - dedupe_key = 해시(source_id + kind + 정규화 제목 + 사업키)
- *  - 기존 사업과 같은 사업이면 새로 만들지 않고 변경 제안(before → after)만 (D9)
+ * 회의록 분석 결과(A2) → 국서별 승인 요청(proposals 행).
+ *  - 업무는 회의록에 나온 일만 만든다. 국서 역할(표준 업무) 목록을 자동으로 덧붙이지 않는다(ADR-034).
+ *  - 마감 우선순위: 회의록에 적힌 기한 > AI 역산(근거 문장 필수, 회의일~행사일) > 규칙 엔진 계산값.
+ *  - 정리본의 액션아이템과 대조해 빠진 업무를 회의록 근거 업무로 보탠다(같은 국서·같은 결과물은 하나로).
+ *  - 기존 사업과 같은 사업이면 새로 만들지 않고 변경 제안(before → after), 기존 업무와 회의록 기한이 다르면 마감 변경 제안.
+ *  - 담당자(사람)는 추천하지 않는다 — 국장이 국서 공간에서 정한다.
+ *  - dedupe_key = 해시(source_id + kind + 정규화 제목 + 사업키) — 재분석해도 같은 제안이 겹치지 않는다.
  */
 export type ExistingProject = {
   id: string;
@@ -124,7 +126,8 @@ export function buildProposals(input: {
   meetingId: string;
   a2: A2Output;
   existing: ExistingProject[];
-  members: Member[];
+  /** 예전 담당자 추천용 — 지금은 쓰지 않는다(호환을 위해 받기만 함) */
+  members?: Member[];
   params: RuleParams;
   today: string;
   /** A1 액션아이템 — 업무로 빠짐없이 옮겨졌는지 확인(빠진 것은 회의록 근거 업무로 추가) */
@@ -201,7 +204,7 @@ export function buildProposals(input: {
   }
 
   const pushTask = (key: string | null, shape: ProjShape | null, t: {
-    title: string; description: string | null; lead: string; support: string[]; template_key: string | null; assignee_hint: string | null; checklist?: string[];
+    title: string; description: string | null; lead: string; support: string[]; template_key: string | null; checklist?: string[];
     due: string | null; due_reason: string | null; due_feasible: boolean; evidence: unknown; inferred: boolean; inference_reason: string | null; confidence: number;
   }) => {
     // 이미 있는 업무: 새로 만들지 않는다. 회의록에 다른 마감이 명시돼 있으면 '업무 변경(마감)' 제안으로 연결
@@ -258,7 +261,7 @@ export function buildProposals(input: {
       const taken = (k: string) => (shape?.existingTasks ?? []).some((x) => x.template_key === k) || rows.some((r) => r.project_key === key && (r.payload as { template_key?: string | null }).template_key === k);
       const keyToSave = t.template_key ?? (tk && key && !taken(tk) ? tk : null);
       pushTask(key, shape, {
-        title: t.title, description: t.description, lead: t.lead_department, support: t.support_departments, template_key: keyToSave, assignee_hint: t.assignee_hint,
+        title: t.title, description: t.description, lead: t.lead_department, support: t.support_departments, template_key: keyToSave,
         checklist: t.checklist ?? [],
         due: basis ? t.due_date : s?.due ?? null,
         due_reason:
@@ -304,7 +307,7 @@ export function buildProposals(input: {
     const sched = onlyProject?.event_start && tpl ? computeSchedule({ eventStart: onlyProject.event_start, today, funding: onlyProject.funding, usesVendor: onlyProject.usesVendor, params }, false).tasks.find((x) => x.key === tpl) : undefined;
     const tplFree = tpl && key && !existingTasks.some((x) => x.template_key === tpl) && !mine.some((r) => (r.payload as { template_key?: string | null }).template_key === tpl) ? tpl : null;
     pushTask(key, onlyProject, {
-      title: taskTitleFrom(ai.what), description: ai.what !== taskTitleFrom(ai.what) ? `회의록: "${ai.quote || ai.what}"` : null, lead: dept, support: [], template_key: tplFree, assignee_hint: null,
+      title: taskTitleFrom(ai.what), description: ai.what !== taskTitleFrom(ai.what) ? `회의록: "${ai.quote || ai.what}"` : null, lead: dept, support: [], template_key: tplFree,
       due: fromMinutes ?? sched?.due ?? null,
       due_reason: fromMinutes ? `회의록에 명시된 기한(¶${ai.para})` : sched?.reason ?? null,
       due_feasible: fromMinutes ? true : sched?.feasible ?? true,
