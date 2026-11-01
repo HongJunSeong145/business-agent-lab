@@ -10,6 +10,7 @@ import { dateColumnToString } from "@/lib/utils";
 import { notifyLeaders } from "./notifications";
 import { recomputeReadiness, syncProjectCompletion } from "./tasks";
 import { recalcProjectSchedule } from "./schedule";
+import { extractDeliverableText } from "@/lib/extract";
 import { sanitizeFileName } from "./meetings";
 import { ServiceError } from "./invitations";
 
@@ -59,6 +60,45 @@ export function missingRequired(f: PlanFields): string[] {
   return miss;
 }
 
+/**
+ * 결재 가능 여부: 기획안 문서(첨부·기획국 작업물)가 있으면 그 문서가 내용이므로 행사명·행사 날짜만 있으면 된다.
+ * 문서 없이 양식만 쓴 경우는 양식 필수 항목을 모두 채워야 한다.
+ */
+export function missingForApproval(f: PlanFields, contentText: string | null | undefined): string[] {
+  if (contentText && contentText.trim().length >= 20) return [!f.title && "행사명", !f.event_date && "행사 날짜"].filter(Boolean) as string[];
+  return missingRequired(f);
+}
+
+/** 프로젝트 정보로 채운 기본 양식 */
+function prefillOf(p: { title: string; event_start: Date | null; event_end: Date | null; venue: string | null; host: string | null; organizer: string | null; funding_sources: { amount_planned: unknown }[] }): PlanFields {
+  return planFieldsSchema.parse({
+    title: p.title,
+    event_date: p.event_start ? dateColumnToString(p.event_start) : "",
+    datetime: p.event_start ? `${dateColumnToString(p.event_start)}${p.event_end && +p.event_end !== +p.event_start ? ` ~ ${dateColumnToString(p.event_end)}` : ""}` : "",
+    venue: p.venue ?? "",
+    budget: p.funding_sources.length ? p.funding_sources.reduce((n: number, f) => n + Number(f.amount_planned), 0) : null,
+    host: p.host ?? "",
+    organizer: p.organizer ?? "",
+  });
+}
+
+/** 기획안 문서 본문에서 양식 칸을 가볍게 채운다(비어 있는 칸만, 줄 머리 '항목: 값' 형태) */
+export function fieldsFromText(text: string, base: PlanFields): PlanFields {
+  const pick = (re: RegExp) => text.match(re)?.[1]?.trim().slice(0, 200) ?? "";
+  const out = { ...base };
+  if (!out.title) out.title = pick(/(?:^|\n)\s*(?:행사명|사업명)\s*[:：]?\s*([^\n]+)/);
+  if (!out.datetime) out.datetime = pick(/(?:^|\n)\s*(?:일\s*시|행사\s*일시)\s*[:：]?\s*([^\n]+)/);
+  if (!out.venue) out.venue = pick(/(?:^|\n)\s*(?:장\s*소)\s*[:：]?\s*([^\n]+)/);
+  if (!out.host) out.host = pick(/(?:^|\n)\s*(?:주\s*최)\s*[:：]?\s*([^\n]+)/);
+  if (!out.organizer) out.organizer = pick(/(?:^|\n)\s*(?:주\s*관)\s*[:：]?\s*([^\n]+)/);
+  if (out.budget === null) {
+    const b = pick(/(?:^|\n)\s*(?:총\s*)?예산(?:액)?\s*[:：]?\s*([\d,]+)\s*원?/);
+    if (b) out.budget = Number(b.replace(/,/g, "")) || null;
+  }
+  if (!out.purpose) out.purpose = pick(/(?:^|\n)\s*(?:배경\s*및\s*목적|목\s*적)\s*[:：]?\s*([^\n]+)/);
+  return planFieldsSchema.parse(out);
+}
+
 async function loadProject(db: Db | Tx, termId: string, projectId: string) {
   const p = await db.project.findFirst({ where: { id: projectId, term_id: termId, deleted_at: null }, include: { funding_sources: true } });
   if (!p) throw new ServiceError("사업을 찾을 수 없습니다.", 404);
@@ -78,15 +118,7 @@ export async function getPlan(db: Db, actor: ActorT, projectId: string) {
     select: { id: true, display_name: true },
   });
   const name = (id: string | null) => users.find((u) => u.id === id)?.display_name ?? null;
-  const prefill: PlanFields = planFieldsSchema.parse({
-    title: p.title,
-    event_date: p.event_start ? dateColumnToString(p.event_start) : "",
-    datetime: p.event_start ? `${dateColumnToString(p.event_start)}${p.event_end && +p.event_end !== +p.event_start ? ` ~ ${dateColumnToString(p.event_end)}` : ""}` : "",
-    venue: p.venue ?? "",
-    budget: p.funding_sources.length ? p.funding_sources.reduce((n, f) => n + Number(f.amount_planned), 0) : null,
-    host: p.host ?? "",
-    organizer: p.organizer ?? "",
-  });
+  const prefill: PlanFields = prefillOf(p);
   const approved = plan?.versions.find((v) => v.approved_at);
   // 기획국 '기획안 초안 작성' 업무의 AI 레퍼런스 기획안(양식으로 가져오기)
   const draftTask = await planDraftTask(db, p.id);
@@ -114,6 +146,9 @@ export async function getPlan(db: Db, actor: ActorT, projectId: string) {
       approvedBy: name(v.approved_by),
       approvedAt: v.approved_at,
       file: v.file_key ? { name: v.file_name ?? "첨부파일", url: signedFileUrl(v.file_key), downloadUrl: signedFileUrl(v.file_key, { download: true }) } : null,
+      contentText: v.content_text ? v.content_text.slice(0, 30000) : null,
+      fromDeliverable: Boolean(v.source_deliverable_version_id),
+      missing: missingForApproval(planFieldsSchema.parse(v.fields), v.content_text),
     })),
     prefill,
     permissions: { edit: canEdit(actor) && p.status !== "cancelled", approve: can(actor, { type: "plan.approve" }) && p.status !== "cancelled" },
@@ -136,6 +171,7 @@ export async function savePlanVersion(
   const note = input.note?.trim().slice(0, 500) || null;
 
   let file: { key: string; name: string; mime: string } | null = null;
+  let contentText: string | null = null;
   if (input.file) {
     const name = sanitizeFileName(input.file.name);
     let kind;
@@ -147,6 +183,8 @@ export async function savePlanVersion(
     }
     if (kind === "txt" || kind === "md") throw new ServiceError("기획안 첨부는 PDF·DOCX·HWPX·HWP 파일만 받습니다. 내용은 양식에 입력하세요.");
     file = { key: newStorageKey("plans"), name, mime: KIND_MIME[kind] };
+    // 첨부 기획안 본문을 읽어 둔다 — 홍보·집행 등 다른 국서 레퍼런스·평가가 이 내용을 기준으로 삼는다
+    contentText = await extractDeliverableText(kind, input.file.bytes).then((t) => t.slice(0, 100_000), () => null);
     await storage.put(file.key, input.file.bytes, file.mime);
   }
 
@@ -155,15 +193,18 @@ export async function savePlanVersion(
       const plan = await tx.plan.upsert({ where: { project_id: p.id }, update: {}, create: { project_id: p.id, status: "draft" } });
       await tx.$queryRaw`SELECT id FROM plans WHERE id = ${plan.id}::uuid FOR UPDATE`;
       const last = await tx.planVersion.aggregate({ where: { plan_id: plan.id }, _max: { version_no: true } });
+      // 새 파일 없이 양식만 고쳐 저장하면 이전 버전의 기획안 문서(첨부·본문)를 이어받는다
+      const prevDoc = file ? null : await tx.planVersion.findFirst({ where: { plan_id: plan.id }, orderBy: { version_no: "desc" }, select: { file_key: true, file_name: true, file_mime: true, content_text: true } });
       const v = await tx.planVersion.create({
         data: {
           plan_id: plan.id,
           version_no: (last._max.version_no ?? 0) + 1,
           fields: parsed.data as object,
           note,
-          file_key: file?.key ?? null,
-          file_name: file?.name ?? null,
-          file_mime: file?.mime ?? null,
+          file_key: file?.key ?? prevDoc?.file_key ?? null,
+          file_name: file?.name ?? prevDoc?.file_name ?? null,
+          file_mime: file?.mime ?? prevDoc?.file_mime ?? null,
+          content_text: contentText ?? prevDoc?.content_text ?? null,
           author_id: actor.userId,
         },
       });
@@ -179,7 +220,7 @@ export async function savePlanVersion(
       const planTasks = await tx.task.findMany({ where: { project_id: p.id, template_key: { in: ["PLN_DRAFT", "PLN_APPROVAL"] }, deleted_at: null }, select: { id: true } });
       if (planTasks.length) await recomputeReadiness(tx, actor.termId, { dependentsOf: planTasks.map((d) => d.id) });
       await writeAudit(tx, { actorId: actor.userId, action: "plan.save", entityType: "project", entityId: p.id, diff: { version: v.version_no, file: file?.name ?? null } });
-      return { planId: plan.id, versionId: v.id, versionNo: v.version_no, missing: missingRequired(parsed.data) };
+      return { planId: plan.id, versionId: v.id, versionNo: v.version_no, missing: missingForApproval(parsed.data, v.content_text) };
     });
   } catch (e) {
     if (file) await storage.delete(file.key).catch(() => undefined);
@@ -200,7 +241,7 @@ export async function submitPlan(db: Db, actor: ActorT, projectId: string) {
   if (!canEdit(actor)) throw new ServiceError("기획안은 기획국과 회장·국장만 결재 요청할 수 있습니다.", 403);
   const { project, plan, current } = await loadPlan(db, actor.termId, projectId);
   if (plan.status === "approved") throw new ServiceError("이미 결재된 버전입니다.");
-  const missing = missingRequired(planFieldsSchema.parse(current.fields));
+  const missing = missingForApproval(planFieldsSchema.parse(current.fields), current.content_text);
   if (missing.length) throw new ServiceError(`필수 항목을 채워 주세요: ${missing.join(", ")}`);
   await db.$transaction(async (tx) => {
     await tx.plan.update({ where: { id: plan.id }, data: { status: "submitted" } });
@@ -217,16 +258,20 @@ export async function approvePlan(db: Db, actor: ActorT, projectId: string) {
   return db.$transaction(async (tx) => {
     const { project, plan, current } = await loadPlan(tx, actor.termId, projectId);
     if (current.approved_at) throw new ServiceError("이미 결재된 버전입니다.");
-    const missing = missingRequired(planFieldsSchema.parse(current.fields));
+    const missing = missingForApproval(planFieldsSchema.parse(current.fields), current.content_text);
     if (missing.length) throw new ServiceError(`필수 항목이 비어 있어 결재할 수 없습니다: ${missing.join(", ")}`);
     const previouslyApproved = plan.versions.find((v) => v.approved_at);
     const now = new Date();
     await tx.planVersion.update({ where: { id: current.id }, data: { approved_by: actor.userId, approved_at: now } });
     await tx.plan.update({ where: { id: plan.id }, data: { status: "approved" } });
 
-    // 표준 업무 완료: 초안 작성·검토 및 결재
+    // 표준 업무 완료: 초안 작성·검토 및 결재 (+ 표준 키 없이 만든 기획국 '기획안' 업무)
+    const draftTask = await planDraftTask(tx, project.id);
     const planTasks = await tx.task.findMany({
-      where: { project_id: project.id, template_key: { in: ["PLN_DRAFT", "PLN_APPROVAL"] }, deleted_at: null, is_completed: false, status: { not: "cancelled" } },
+      where: {
+        project_id: project.id, deleted_at: null, is_completed: false, status: { not: "cancelled" },
+        OR: [{ template_key: { in: ["PLN_DRAFT", "PLN_APPROVAL"] } }, ...(draftTask ? [{ id: draftTask.id }] : [])],
+      },
     });
     for (const t of planTasks) {
       await tx.task.update({ where: { id: t.id }, data: { is_completed: true, completed_by: actor.userId, completed_at: now, status: "done" } });
@@ -325,16 +370,19 @@ export async function planForContext(db: Db | Tx, projectId: string) {
   if (!plan || plan.versions.length === 0) return null;
   const approved = plan.versions.find((v) => v.approved_at);
   const v = approved ?? plan.versions[0]!;
-  return { versionId: v.id, versionNo: v.version_no, isDraft: !approved, fields: planFieldsSchema.parse(v.fields) };
+  const fields = planFieldsSchema.parse(v.fields);
+  return { versionId: v.id, versionNo: v.version_no, isDraft: !approved, fields, contentText: v.content_text, text: planToText(fields, v.content_text) };
 }
 
-export function planToText(f: PlanFields): string {
+/** AI 에게 주는 기획안: 양식 칸 + 기획안 문서 본문(첨부·기획국 작업물) */
+export function planToText(f: PlanFields, content?: string | null): string {
+  const body = content?.trim() ? `\n\n[기획안 문서 본문]\n${content.trim().slice(0, 40_000)}` : "";
   return [
     `행사명: ${f.title}`, `행사 날짜: ${f.event_date || "미정"}`, `일시: ${f.datetime}`, `장소: ${f.venue}`, `예산액: ${f.budget === null ? "" : `${f.budget.toLocaleString()}원`}`,
     `주최: ${f.host}`, `주관: ${f.organizer}`, `배경 및 목적: ${f.purpose}`, `행사 내용: ${f.content}`,
     f.timetable.length ? `타임테이블:\n${f.timetable.map((t) => `- ${t.time} ${t.item}`).join("\n")}` : "",
     f.budget_scenarios.length ? `예산 시나리오:\n${f.budget_scenarios.map((b) => `- ${b.name}: ${b.amount.toLocaleString()}원 ${b.note}`).join("\n")}` : "",
-  ].filter(Boolean).join("\n");
+  ].filter(Boolean).join("\n") + body;
 }
 
 /**
@@ -370,4 +418,108 @@ export async function planDraftTask(db: Db | Tx, projectId: string) {
     take: 1,
   });
   return rows[0] ?? null;
+}
+
+/** 이 업무가 사업의 '기획안' 업무인가(표준 키 PLN_DRAFT·PLN_APPROVAL 또는 기획국 주관 '기획안' 업무) */
+export async function isPlanTask(db: Db | Tx, taskId: string) {
+  const t = await db.task.findFirst({
+    where: { id: taskId, deleted_at: null, project_id: { not: null } },
+    select: { id: true, project_id: true, title: true, template_key: true, departments: { where: { role: "lead" }, select: { department: { select: { code: true } } } } },
+  });
+  if (!t?.project_id) return null;
+  const lead = t.departments[0]?.department.code;
+  const yes = t.template_key === "PLN_DRAFT" || t.template_key === "PLN_APPROVAL" || (lead === "planning" && /기획안/.test(t.title));
+  return yes ? { taskId: t.id, projectId: t.project_id } : null;
+}
+
+const DOC_MIME = /pdf|word|hwp|haansoft|presentation|text\/plain|markdown/i;
+
+/**
+ * 기획국 '기획안' 업무에 올린 작업물 → 그 사업의 기획안 새 버전으로 자동 반영(사용자 결정 2026-11-01).
+ * 기획안 화면·홍보국·집행국 레퍼런스·작업물 평가·결재본 기준 재배정이 모두 이 내용을 기준으로 삼는다.
+ * 같은 작업물 버전은 한 번만 가져온다. 문서가 아니거나(이미지·링크) 글자를 못 읽으면 건너뛴다.
+ */
+export async function importPlanFromDeliverable(db: Db, deliverableVersionId: string): Promise<{ versionId: string; versionNo: number; projectId: string } | null> {
+  const dv = await db.deliverableVersion.findFirst({ where: { id: deliverableVersionId, deleted_at: null }, include: { deliverable: { select: { task_id: true, title: true, deleted_at: true } } } });
+  if (!dv || dv.deliverable.deleted_at || !dv.storage_key) return null;
+  if (!DOC_MIME.test(dv.mime ?? "") || !dv.extracted_text?.trim()) return null;
+  const pt = await isPlanTask(db, dv.deliverable.task_id);
+  if (!pt) return null;
+  const p = await db.project.findFirst({ where: { id: pt.projectId, deleted_at: null }, include: { funding_sources: true } });
+  if (!p || p.status === "cancelled") return null;
+  if (await db.planVersion.findUnique({ where: { source_deliverable_version_id: dv.id } })) return null;
+  return db.$transaction(async (tx) => {
+    const plan = await tx.plan.upsert({ where: { project_id: p.id }, update: {}, create: { project_id: p.id, status: "draft" } });
+    await tx.$queryRaw`SELECT id FROM plans WHERE id = ${plan.id}::uuid FOR UPDATE`;
+    const prev = await tx.planVersion.findFirst({ where: { plan_id: plan.id }, orderBy: { version_no: "desc" } });
+    const base = prev ? planFieldsSchema.parse(prev.fields) : prefillOf(p);
+    const fields = fieldsFromText(dv.extracted_text!, base);
+    const v = await tx.planVersion.create({
+      data: {
+        plan_id: plan.id, version_no: (prev?.version_no ?? 0) + 1, fields: fields as object,
+        file_key: dv.storage_key, file_name: dv.original_name, file_mime: dv.mime, content_text: dv.extracted_text!.slice(0, 100_000),
+        source_deliverable_version_id: dv.id, note: `기획국 작업물 '${dv.deliverable.title}' v${dv.version_no}에서 자동 반영`, author_id: dv.uploaded_by,
+      },
+    });
+    // 결재본이 이미 있으면 상태는 '수정 중'(결재본은 그대로 기준), 없으면 작성 중
+    await tx.plan.update({ where: { id: plan.id }, data: { current_version_id: v.id, status: plan.status === "approved" ? "approved" : "draft" } });
+    const planTasks = await tx.task.findMany({ where: { project_id: p.id, template_key: { in: ["PLN_DRAFT", "PLN_APPROVAL"] }, deleted_at: null }, select: { id: true } });
+    await recomputeReadiness(tx, p.term_id, { dependentsOf: [...planTasks.map((t) => t.id), pt.taskId] });
+    await writeAudit(tx, { actorId: dv.uploaded_by, action: "plan.save", entityType: "project", entityId: p.id, diff: { version: v.version_no, fromDeliverableVersion: dv.id, file: dv.original_name } });
+    return { versionId: v.id, versionNo: v.version_no, projectId: p.id };
+  });
+}
+
+/**
+ * 기획안 업무를 회장·국장이 완료(완료 체크·진척도 100%) → 그 사업의 최신 기획안을 결재한 것으로 반영.
+ * (기획국 공간에서 작업물로 올리고 완료 처리하는 흐름도 기획안 결재와 같은 효과 — 후속 업무 착수·결재본 기준 재배정)
+ */
+export async function approvePlanFromTask(db: Db, actor: ActorT, taskId: string): Promise<{ versionNo: number; rebaseJobId: string } | { skipped: string } | null> {
+  if (!can(actor, { type: "plan.approve" })) return null;
+  const pt = await isPlanTask(db, taskId);
+  if (!pt) return null;
+  // 올린 작업물 중 아직 기획안에 안 들어간 최신 문서를 먼저 가져온다
+  const latest = await db.deliverableVersion.findFirst({ where: { deleted_at: null, deliverable: { task_id: pt.taskId, deleted_at: null } }, orderBy: { created_at: "desc" } });
+  if (latest) await importPlanFromDeliverable(db, latest.id);
+  const plan = await db.plan.findUnique({ where: { project_id: pt.projectId }, include: { versions: true } });
+  const current = plan?.versions.find((v) => v.id === plan.current_version_id);
+  if (!current) return { skipped: "기획안 문서가 없어 결재로 반영하지 못했습니다. 기획안 파일을 작업물로 올리거나 사업 화면 기획안 탭에서 작성하세요." };
+  if (current.approved_at) return null;
+  try {
+    const r = await approvePlan(db, actor, pt.projectId);
+    return { versionNo: r.versionNo, rebaseJobId: r.rebaseJobId };
+  } catch (e) {
+    return { skipped: (e as Error).message };
+  }
+}
+
+/**
+ * 배포 시 한 번: 이미 기획국 '기획안' 업무에 올려 둔 문서를 사업 기획안으로 가져오고,
+ * 그 업무가 이미 완료(또는 수동 100%)였으면 결재본으로 반영한다(결재본 기준 재배정 작업도 등록 — 작업 점검기가 보낸다).
+ */
+export async function backfillPlansFromDeliverables(db: Db) {
+  const term = await db.term.findFirst({ where: { is_current: true } }).catch(() => null) ?? (await db.term.findFirst({ orderBy: { created_at: "desc" } }));
+  if (!term) return { imported: 0, approved: 0 };
+  const marker = await db.setting.findUnique({ where: { term_id_key: { term_id: term.id, key: "PLAN_DELIVERABLE_SYNC_V1" } } });
+  if (marker) return { imported: 0, approved: 0 };
+  let imported = 0;
+  let approved = 0;
+  const versions = await db.deliverableVersion.findMany({
+    where: { deleted_at: null, storage_key: { not: null }, deliverable: { deleted_at: null, task: { deleted_at: null, project: { deleted_at: null, term_id: term.id } } } },
+    orderBy: { created_at: "asc" },
+    select: { id: true, deliverable: { select: { task_id: true } } },
+  });
+  for (const v of versions) if (await importPlanFromDeliverable(db, v.id).catch(() => null)) imported++;
+  const leaders = await db.membership.findMany({ where: { term_id: term.id, role: { in: ["president", "admin", "head"] } }, select: { user_id: true, role: true, department_id: true } });
+  const taskIds = [...new Set(versions.map((v) => v.deliverable.task_id))];
+  for (const id of taskIds) {
+    const t = await db.task.findUnique({ where: { id }, select: { is_completed: true, manual_progress: true, completed_by: true } });
+    if (!t || !(t.is_completed || t.manual_progress === 100)) continue;
+    const who = leaders.find((l) => l.user_id === t.completed_by) ?? leaders.find((l) => l.role === "president") ?? leaders[0];
+    if (!who) continue;
+    const r = await approvePlanFromTask(db, { userId: who.user_id, role: who.role as ActorT["role"], departmentId: who.department_id, departmentCode: null, termId: term.id }, id).catch(() => null);
+    if (r && "versionNo" in r) approved++;
+  }
+  await db.setting.create({ data: { term_id: term.id, key: "PLAN_DELIVERABLE_SYNC_V1", value: true } });
+  return { imported, approved };
 }

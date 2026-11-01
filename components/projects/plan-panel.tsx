@@ -14,7 +14,7 @@ type Fields = {
   title: string; event_date: string; datetime: string; venue: string; budget: number | null; host: string; organizer: string; purpose: string; content: string;
   timetable: { time: string; item: string }[]; budget_scenarios: { name: string; amount: number; note: string }[];
 };
-type Version = { id: string; versionNo: number; fields: Fields; note: string | null; author: string | null; at: string; approvedBy: string | null; approvedAt: string | null; file: { name: string; url: string; downloadUrl: string } | null };
+type Version = { id: string; versionNo: number; fields: Fields; note: string | null; author: string | null; at: string; approvedBy: string | null; approvedAt: string | null; file: { name: string; url: string; downloadUrl: string } | null; contentText?: string | null; fromDeliverable?: boolean; missing?: string[] };
 type Data = {
   status: "draft" | "submitted" | "approved" | "rejected" | null;
   currentVersionId: string | null;
@@ -90,7 +90,9 @@ export function PlanPanel({ projectId }: { projectId: string }) {
   const viewing = viewId ? data.versions.find((v) => v.id === viewId) : null;
   const shown = viewing?.fields ?? form;
   const editable = data.permissions.edit && !viewing;
-  const missing = missingOf(shown);
+  const doc = (viewing ?? current)?.contentText ?? null;
+  // 기획안 문서(첨부·기획국 작업물)가 있으면 문서가 내용이므로 행사명·행사 날짜만 필수
+  const missing = doc && doc.trim().length >= 20 ? missingOf(shown).filter((l) => l === "행사명" || l === "행사 날짜") : missingOf(shown);
   const set = <K extends keyof Fields>(k: K, v: Fields[K]) => setForm({ ...form, [k]: v });
 
   async function act(fn: () => Promise<unknown>, ok: string) {
@@ -222,6 +224,15 @@ export function PlanPanel({ projectId }: { projectId: string }) {
         </p>
       ) : null}
 
+      {doc ? (
+        <details className="rounded-lg border border-border px-3 py-2 text-sm" data-testid="plan-document">
+          <summary className="cursor-pointer">
+            기획안 문서 본문{(viewing ?? current)?.fromDeliverable ? " (기획국 작업물에서 자동 반영)" : ""} — 레퍼런스·평가·재배정이 이 내용을 기준으로 삼습니다
+          </summary>
+          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words font-sans text-xs">{doc}</pre>
+        </details>
+      ) : null}
+
       {missing.length ? <p className="text-xs text-warning-text">결재 전 채울 항목: {missing.join(", ")}</p> : null}
 
       {editable ? (
@@ -240,7 +251,7 @@ export function PlanPanel({ projectId }: { projectId: string }) {
       <div className="flex flex-wrap gap-2">
         {editable ? <Button size="sm" disabled={busy} onClick={() => void save()}>새 버전으로 저장</Button> : null}
         {editable && current && data.status !== "approved" && data.status !== "submitted" ? (
-          <Button size="sm" variant="secondary" disabled={busy || missingOf(current.fields).length > 0} onClick={() => void act(() => api(`/api/projects/${projectId}/plan/submit`, { method: "POST" }), "결재를 요청했습니다.")}>
+          <Button size="sm" variant="secondary" disabled={busy || (current.missing ?? missingOf(current.fields)).length > 0} onClick={() => void act(() => api(`/api/projects/${projectId}/plan/submit`, { method: "POST" }), "결재를 요청했습니다.")}>
             결재 요청
           </Button>
         ) : null}

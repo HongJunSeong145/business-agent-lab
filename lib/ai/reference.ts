@@ -95,7 +95,7 @@ export async function runReferenceJob(db: Db, provider: AiProvider, aiJobId: str
     // 2) 정리·예시안
     const documents: { name: string; content: string }[] = [];
     if (search) documents.push({ name: "검색 결과", content: `${sources.map((s, i) => `S${i + 1}. ${s.title} — ${s.url}`).join("\n")}\n\n[조사 메모]\n${search.text.slice(0, 20000)}` });
-    if (plan) documents.push({ name: `기획안 v${plan.versionNo}${plan.isDraft ? " (초안)" : " (결재본)"}`, content: maskText(planToText(plan.fields)) });
+    if (plan) documents.push({ name: `기획안 v${plan.versionNo}${plan.isDraft ? " (초안)" : " (결재본)"}`, content: maskText(plan.text) });
     if (meeting) documents.push({ name: `회의록 분석: ${meeting.title}`, content: maskText(JSON.stringify(meeting.summary).slice(0, 20000)) });
     for (const p of past) documents.push({ name: `과거 작업물: ${p.taskTitle} — ${p.deliverableTitle}`, content: maskText(p.text) });
 

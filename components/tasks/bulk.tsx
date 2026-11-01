@@ -34,10 +34,11 @@ export function BulkProvider({ children, canManage }: { children: React.ReactNod
     if (action === "delete" && !window.confirm(`선택한 업무 ${selected.size}개를 삭제할까요?`)) return;
     setBusy(true);
     try {
-      const r = await api<{ done: number; failed: { id: string; error?: string }[] }>("/api/tasks/bulk", {
+      const r = await api<{ done: number; failed: { id: string; error?: string }[]; planNote?: string | null }>("/api/tasks/bulk", {
         body: { ids: [...selected], action, due_date: date || undefined, days, assignee_ids: assignee ? [assignee] : [] },
       });
       toast(`${r.done}개 처리했습니다.${r.failed.length ? ` ${r.failed.length}개는 못 했습니다(${[...new Set(r.failed.map((f) => f.error))].join(", ")}).` : ""}`, { tone: r.failed.length ? "error" : undefined });
+      if (r.planNote) toast(r.planNote, { ms: 8000 });
       setSelected(new Set());
       router.refresh();
     } catch (e) {

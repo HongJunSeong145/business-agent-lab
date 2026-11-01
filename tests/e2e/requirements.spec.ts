@@ -41,11 +41,12 @@ test("기획국원: AI 레퍼런스 기획안 받기 → 양식 채우기 → �
   page.once("dialog", (d) => void d.accept());
   await page.getByTestId("plan-panel").getByRole("button", { name: "결재", exact: true }).click();
   await expect(page.getByText(/기획안 v1을 결재했습니다/)).toBeVisible();
-  await expect.poll(async () => Number((await sql<{ n: string }>("SELECT count(*) n FROM proposals WHERE source_type = 'plan' AND status = 'pending'"))[0]!.n), { timeout: 30_000 }).toBeGreaterThan(0);
+  await expect.poll(async () => Number((await sql<{ n: string }>("SELECT count(*) n FROM proposals WHERE source_type = 'plan' AND status = 'pending' AND project_key = $1", [await projectId()]))[0]!.n), { timeout: 30_000 }).toBeGreaterThan(0);
   await page.goto("/review");
   await expect(page.getByText(/결재 기획안 기준 재배정 — E2E 요구 점검 행사 기획안 v1/)).toBeVisible();
-  await expect(page.locator("[data-kind='update_project']")).toContainText("2027-02-12");
-  await expect(page.locator("[data-kind='deadline']").first()).toContainText("결재 기획안 v1 행사일");
+  const mine = page.locator(`[data-review-project='${PROJECT}']`).first();
+  await expect(mine.locator("[data-kind='update_project']")).toContainText("2027-02-12");
+  await expect(mine.locator("[data-kind='deadline']").first()).toContainText("결재 기획안 v1 행사일");
 });
 
 test("국서 공간 일괄 수정: 여러 업무 선택 → 마감 3일 옮기기", async ({ page }) => {

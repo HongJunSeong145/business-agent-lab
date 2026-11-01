@@ -235,7 +235,7 @@ export function TaskDrawerBody({ id, onTitle, initialTab }: { id: string; onTitl
                       const completed = e.target.checked;
                       // 낙관적 업데이트 — 실패하면 run() 이 서버 값으로 다시 불러온다
                       setD((prev) => (prev ? { ...prev, task: { ...prev.task, is_completed: completed } } : prev));
-                      void run(() => api(`/api/tasks/${id}/complete`, { body: { completed } }), completed ? "완료 처리했습니다." : "완료를 해제했습니다.");
+                      void run(() => api<{ planNote?: string | null }>(`/api/tasks/${id}/complete`, { body: { completed } }).then((r) => r?.planNote && toast(r.planNote, { ms: 8000 })), completed ? "완료 처리했습니다." : "완료를 해제했습니다.");
                     }}
                   />
                   완료
@@ -249,7 +249,7 @@ export function TaskDrawerBody({ id, onTitle, initialTab }: { id: string; onTitl
                   onSubmit={(e) => {
                     e.preventDefault();
                     const v = Number(new FormData(e.currentTarget).get("manual"));
-                    void run(() => api(`/api/tasks/${id}/progress`, { body: { value: v } }), "진척도를 바꿨습니다.");
+                    void run(() => api<{ planNote?: string | null }>(`/api/tasks/${id}/progress`, { body: { value: v } }).then((r) => r?.planNote && toast(r.planNote, { ms: 8000 })), "진척도를 바꿨습니다.");
                   }}
                 >
                   <Input name="manual" aria-label="수동 진척도(%)" type="number" min={0} max={100} defaultValue={t.manual_progress ?? effectiveProgress(state)} key={`${t.manual_progress}`} className="h-8 w-20" />

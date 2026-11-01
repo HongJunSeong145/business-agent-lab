@@ -25,6 +25,10 @@ try {
       console.log(`데모 데이터: 회원 ${d.users}명(로그인 ${d.loginEnabled ? "가능" : "불가 — SEED_DEMO_PASSWORD 미설정"}), 연락처 ${d.contacts}건, 사업·회의록 ${c.created ? "생성" : "건너뜀"}`);
     }
   }
+  // 기획국 '기획안' 업무에 이미 올린 문서 → 사업 기획안으로(완료된 업무면 결재본으로) — 한 번만
+  const { backfillPlansFromDeliverables } = await import("../lib/services/plans");
+  const pb = await backfillPlansFromDeliverables(prisma);
+  if (pb.imported || pb.approved) console.log(`기획안 연결: 작업물 ${pb.imported}건을 기획안으로, ${pb.approved}건을 결재본으로 반영했습니다.`);
   // 예전 데모 데이터: 표준 업무 자동 생성분을 예시 업무로 교체(한 번만, 손대지 않은 것만)
   const rd = await replaceDemoTemplateTasks(prisma);
   if (rd.replaced) console.log(`데모 사업의 자동 표준 업무 ${rd.replaced}건을 예시 업무로 바꿨습니다.`);

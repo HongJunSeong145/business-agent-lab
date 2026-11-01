@@ -65,7 +65,7 @@ export async function runEvaluateJob(db: Db, storage: Storage, provider: AiProvi
     }
     // 가장 중요한 기준은 결재된 최종 기획안(없으면 최신 초안, 초안이라고 표시)
     const plan = task.project_id ? await planForContext(db, task.project_id) : null;
-    if (plan) documents = [...(documents ?? []), { name: `기획안 v${plan.versionNo}${plan.isDraft ? " (초안 — 결재 전)" : " (결재본)"}`, content: maskText(planToText(plan.fields)) }];
+    if (plan) documents = [...(documents ?? []), { name: `기획안 v${plan.versionNo}${plan.isDraft ? " (초안 — 결재 전)" : " (결재본)"}`, content: maskText(plan.text) }];
     const criteria = criteriaFor(task, lead.code);
     const prev = await db.progressEvaluation.findFirst({ where: { task_id: task.id, deliverable_version_id: { not: v.id } }, orderBy: { created_at: "desc" }, include: { deliverable_version: { select: { version_no: true } } } });
     const out = await callStructured(db, provider, {
