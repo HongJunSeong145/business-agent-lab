@@ -72,6 +72,11 @@ async function start() {
   g.kgbSweeper = setInterval(() => void sweepStaleJobs().catch((e) => console.error("[worker] 점검 오류:", e)), 60_000);
   g.kgbSweeper.unref();
   console.log("[worker] 작업 처리기 시작");
+  // 배포 후 한 번: 이미 기획국 '기획안' 업무에 올린 문서를 사업 기획안으로 연결(완료된 업무는 결재본) — 실패해도 서버는 계속
+  void import("@/lib/services/plans")
+    .then(({ backfillPlansFromDeliverables }) => backfillPlansFromDeliverables(prisma))
+    .then((r) => (r.imported || r.approved) && console.log(`[worker] 기획안 연결: 작업물 ${r.imported}건 → 기획안, ${r.approved}건 → 결재본`))
+    .catch((e) => console.error("[worker] 기획안 연결 실패:", e));
 }
 
 /** 워커 시작(프로세스당 1회). WORKER_MODE=inline 이면 웹 서버 안에서, separate 면 worker/index.ts 에서 호출 */
