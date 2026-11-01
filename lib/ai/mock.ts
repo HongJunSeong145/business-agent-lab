@@ -1,0 +1,265 @@
+import type { A6Output } from "./schemas/a6";
+import type { CompleteRequest, MockHandler, MockSearchHandler, SearchRequest, SearchSource } from "./provider";
+import type { A5Output } from "./schemas/a5";
+import type { A1Summary, DeptCode } from "./schemas/a1";
+import type { A2Output } from "./schemas/a2";
+import type { Paragraph } from "./grounding";
+import { parseKoreanDates } from "./korean-dates";
+
+/**
+ * 결정적 mock 분석기 (AI_PROVIDER=mock, 테스트·개발 전용 — 3-4).
+ * 실제 LLM 대신 간단한 규칙으로 같은 스키마의 결과를 만든다. 같은 입력이면 항상 같은 출력.
+ * 회의록 안의 지시문("…하라")은 그냥 글자로 취급한다(T24 구조적 방어와 동일).
+ */
+export type A1MockContext = { paragraphs: Paragraph[]; meetingDate: string };
+export type A2MockContext = { summary: A1Summary; meetingDate: string; projects: { id: string; title: string }[] };
+
+const DEPT_WORDS: [DeptCode, RegExp][] = [
+  ["planning", /기획국|기획차장|기획안/],
+  ["finance", /재정국|예산|구입|결산|회계/],
+  ["secretariat", /사무국|제휴|문의|요청서/],
+  ["promotion", /홍보국|홍보물|카드뉴스|포스터|현수막|안내물|경고물/],
+  ["operations", /집행국|집행|매뉴얼|패트롤|관리대장|물품/],
+];
+export function guessDept(text: string): DeptCode | null {
+  for (const [d, re] of DEPT_WORDS) if (re.test(text)) return d;
+  return null;
+}
+
+const quoteOf = (t: string) => t.trim().slice(0, 40);
+const EVENT_WORDS = /행사|축제|포차|간식|송별회|데이|설명회|체육대회|MT|엠티/;
+const GENERIC = new Set(["행사", "사업", "관한", "건", "특별", "진행"]);
+
+export function mockA1(ctx: A1MockContext): A1Summary {
+  const { paragraphs: ps, meetingDate } = ctx;
+  const agenda: A1Summary["agenda"] = [];
+  const action_items: A1Summary["action_items"] = [];
+  const mentioned_dates: A1Summary["mentioned_dates"] = [];
+  const budget: A1Summary["budget"] = [];
+  const events: A1Summary["events"] = [];
+  let section: "report" | "deliberation" | "other" = "other";
+  let tableDept: DeptCode | null = null;
+
+  for (const p of ps) {
+    const t = p.text.trim();
+    if (/보고\s*안건/.test(t)) section = "report";
+    else if (/논의|심의/.test(t) && /안건/.test(t)) section = "deliberation";
+    else if (/기타\s*안건/.test(t)) section = "other";
+
+    const head = /^(\d{1,2})\.\s*(.{2,})$/.exec(t);
+    const isTableRow = /(\d{1,2}\.\s*\d{1,2}\s*\([월화수목금토일]\)|\s-)\s*$/.test(t);
+    if (head && !/^\d{1,2}\.\s*\d/.test(t) && t.length < 60 && !isTableRow) {
+      agenda.push({ title: head[2]!.trim(), para: p.n, kind: section, decisions: [], discussions: [], pending: [] });
+    } else if (agenda.length && /^[-–•·]|^->|^→/.test(t)) {
+      const a = agenda[agenda.length - 1]!;
+      const item = { text: t.replace(/^(->|→|[-–•·])\s*/, ""), para: p.n, quote: quoteOf(t) };
+      if (/^->|^→|결정|하기로/.test(t)) a.decisions.push(item);
+      else if (/추후|보류|미정/.test(t)) a.pending.push(item);
+      else a.discussions.push(item);
+    }
+
+    // 표 행("홍보국 | 1. ... | 11. 3(화)" 또는 "홍보국 1. ... 11. 3(화)")
+    const tableRow = /^(기획국|재정국|사무국|홍보국|집행국)?\s*\|?\s*(\d{1,2})\.\s*(.+?)\s*\|?\s*((\d{1,2})\.\s*(\d{1,2})\s*\([월화수목금토일]\)|-)?\s*$/.exec(t);
+    const dateHits = parseKoreanDates(t, meetingDate);
+    for (const d of dateHits) mentioned_dates.push({ text: d.text, date: d.date, date_confidence: d.confidence, para: p.n, quote: quoteOf(t) });
+    if (/^(기획국|재정국|사무국|홍보국|집행국)\s*$/.test(t)) tableDept = guessDept(t);
+    if (tableRow && (tableRow[1] || tableDept) && tableRow[3] && !/에 관한 건$/.test(tableRow[3])) {
+      const dept = guessDept(tableRow[1] ?? "") ?? tableDept;
+      const d = dateHits[0];
+      action_items.push({ who: tableRow[1] ?? null, department: dept, what: tableRow[3].replace(/\|.*$/, "").trim(), due_text: d?.text ?? null, due_date: d?.date ?? null, date_confidence: d?.confidence ?? "low", para: p.n, quote: quoteOf(t) });
+    } else if (/까지|예정|요망|담당/.test(t) && !head) {
+      const d = dateHits[0];
+      action_items.push({ who: null, department: guessDept(t), what: t.replace(/^(->|→|[-–•·>])\s*/, "").slice(0, 200), due_text: d?.text ?? null, due_date: d?.date ?? null, date_confidence: d?.confidence ?? "low", para: p.n, quote: quoteOf(t) });
+    }
+
+    for (const m of t.matchAll(/(\d{1,3}(?:,\d{3})+|\d+)\s*원/g)) {
+      budget.push({ item: t.slice(0, 80), amount: Number(m[1]!.replace(/,/g, "")), funding_source: /교비/.test(t) ? "school" : /학생회비/.test(t) ? "student_fee" : null, para: p.n, quote: quoteOf(t) });
+    }
+  }
+
+  for (const a of agenda) {
+    if (!EVENT_WORDS.test(a.title)) continue;
+    const related = ps.filter((p) => p.n >= a.para && p.n < (agenda[agenda.indexOf(a) + 1]?.para ?? Infinity));
+    const all = related.map((p) => p.text).join(" ");
+    const date = related.flatMap((p) => parseKoreanDates(p.text, meetingDate))[0];
+    const people = /(\d+)\s*(?:명|인분)/.exec(all);
+    const funding = [...(/교비/.test(all) ? (["school"] as const) : []), ...(/학생회비/.test(all) ? (["student_fee"] as const) : [])];
+    events.push({
+      title: a.title.replace(/에 관한 건$|\s*건$/, ""),
+      date: date?.date ?? null,
+      date_confidence: date?.confidence ?? "low",
+      venue: /장소\s*[:：]\s*([^,\n]+)/.exec(all)?.[1]?.trim() ?? null,
+      beneficiaries: people ? Number(people[1]) : null,
+      funding: [...funding],
+      uses_vendor: /업체|대행사|대관/.test(all) ? true : null,
+      para: a.para,
+      quote: quoteOf(ps.find((p) => p.n === a.para)!.text),
+    });
+  }
+  // 개요와 본문에 같은 안건이 두 번 나오는 회의록: 같은 제목 행사는 하나로 합친다(값이 있는 쪽 우선)
+  const merged: typeof events = [];
+  for (const e of events) {
+    const same = merged.find((m) => m.title.replace(/\s/g, "") === e.title.replace(/\s/g, ""));
+    if (!same) merged.push(e);
+    else {
+      same.date ??= e.date;
+      if (same.date === e.date || !same.date) same.date_confidence = e.date ? e.date_confidence : same.date_confidence;
+      same.venue ??= e.venue;
+      same.beneficiaries ??= e.beneficiaries;
+      same.uses_vendor ??= e.uses_vendor;
+      same.funding = [...new Set([...same.funding, ...e.funding])];
+    }
+  }
+  return { agenda, action_items, mentioned_dates, budget, events: merged };
+}
+
+const TEMPLATE_WORDS: [A2Output["tasks"][number]["template_key"], RegExp][] = [
+  ["PLN_DRAFT", /기획안\s*(초안|작성)/],
+  ["FIN_BUDGET_RANGE", /예산\s*(범위|시나리오)/],
+  ["PRO_MAKE", /(카드뉴스|포스터|홍보물|현수막).*(제작)/],
+  ["PRO_PUBLISH", /(게시|배포)/],
+  ["OPS_MANUAL", /매뉴얼/],
+  ["FIN_PURCHASE_LIST", /구입\s*리스트/],
+  ["SEC_PARTNER_LIST", /제휴.*(후보|리스트)/],
+];
+
+export function mockA2(ctx: A2MockContext): A2Output {
+  const { summary, projects } = ctx;
+  const norm = (s: string) => s.replace(/\s|\(.*?\)/g, "");
+  const out: A2Output = { projects: [], tasks: [] };
+  summary.events.forEach((e, i) => {
+    const existing = projects.find((p) => norm(p.title).includes(norm(e.title)) || norm(e.title).includes(norm(p.title)));
+    out.projects.push({
+      ref: `P${i + 1}`,
+      existing_project_id: existing?.id ?? null,
+      title: e.title,
+      category: "event",
+      event_start: e.date,
+      venue: e.venue,
+      beneficiaries: e.beneficiaries,
+      funding: e.funding,
+      uses_vendor: e.uses_vendor,
+      evidence: [{ para: e.para, quote: e.quote }],
+      confidence: 0.6,
+    });
+  });
+  const agendaOf = (para: number) => [...summary.agenda].reverse().find((a) => a.para <= para);
+  for (const a of summary.action_items) {
+    const ag = agendaOf(a.para);
+    let evIdx = ag ? summary.events.findIndex((e) => e.para === ag.para) : -1;
+    if (evIdx < 0) {
+      // 업무 문구에 행사 이름의 핵심 단어가 있으면 그 사업의 업무로 본다(예: "간식 행사 카드뉴스 제작" → "종강 간식 행사")
+      evIdx = summary.events.findIndex((e) => e.title.split(/\s+/).some((w) => w.length >= 2 && !GENERIC.has(w) && a.what.includes(w)));
+    }
+    const proj = evIdx >= 0 ? out.projects[evIdx]! : null;
+    const tk = TEMPLATE_WORDS.find(([, re]) => re.test(a.what))?.[0] ?? null;
+    out.tasks.push({
+      project_ref: proj ? (proj.existing_project_id ?? proj.ref) : null,
+      title: a.what.length > 60 ? `${a.what.slice(0, 57)}…` : a.what,
+      description: null,
+      lead_department: a.department ?? guessDept(a.what) ?? "secretariat",
+      support_departments: [],
+      template_key: tk,
+      assignee_hint: null,
+      due_date: a.due_date,
+      due_basis: a.due_date ? "minutes" : null,
+      due_reason: null,
+      checklist: [],
+      inferred: false,
+      inference_reason: null,
+      evidence: [{ para: a.para, quote: a.quote }],
+      confidence: 0.6,
+    });
+  }
+  return out;
+}
+
+export type A6MockContext = { criteria: string[]; text: string | null; image: boolean };
+
+/** 결정적 A6: 기준 낱말이 추출 텍스트에 있으면 충족, 일부면 부분. 이미지는 '부분'(mock 은 그림을 못 본다) */
+export function mockA6(ctx: A6MockContext): A6Output {
+  const text = (ctx.text ?? "").replace(/\s+/g, "");
+  const criteria = ctx.criteria.map((c) => {
+    const words = c.split(/[·,()\s/]+/).map((w) => w.replace(/(필요시|여부|없음)$/g, "")).filter((w) => w.length >= 2);
+    const hit = words.filter((w) => text.includes(w)).length;
+    const verdict = ctx.image ? "partial" : words.length && hit === words.length ? "met" : hit > 0 ? "partial" : "unmet";
+    return { criterion: c, verdict: verdict as "met" | "partial" | "unmet", evidence: ctx.image ? "mock 평가: 이미지는 내용을 확인하지 않음" : hit ? `작업물에 '${words.filter((w) => text.includes(w)).join("·")}' 언급` : "작업물에서 찾지 못함" };
+  });
+  const pts = criteria.reduce((n, c) => n + (c.verdict === "met" ? 1 : c.verdict === "partial" ? 0.5 : 0), 0);
+  const score = Math.max(1, Math.round((pts / Math.max(1, criteria.length)) * 100));
+  return {
+    criteria,
+    score,
+    missing_items: criteria.filter((c) => c.verdict !== "met").map((c) => c.criterion),
+    suggestions: criteria.filter((c) => c.verdict === "unmet").map((c) => `'${c.criterion}' 항목을 추가하세요.`),
+    summary: `mock 평가: 기준 ${criteria.length}개 중 충족 ${criteria.filter((c) => c.verdict === "met").length}개`,
+  };
+}
+
+export type A5MockContext = { task: { title: string; deptCode: string }; sources: SearchSource[]; searchFailed: boolean; plan: { versionNo: number; isDraft: boolean; fields: { title: string; datetime: string; venue: string } } | null };
+
+/** 결정적 A5 검색: 가상 출처 2개(example.org — 실제 사이트 아님) */
+export function mockA5Search(req: SearchRequest) {
+  const t = (req.mockContext as { task: { title: string } }).task.title;
+  return {
+    text: `mock 검색: '${t}' 관련 사례 2건`,
+    sources: [
+      { url: "https://example.org/council/case-1", title: `${t} 사례 A (가상)` },
+      { url: "https://example.org/council/case-2", title: `${t} 사례 B (가상)` },
+    ],
+    searches: 1,
+  };
+}
+
+/** 결정적 A5: 출처마다 레퍼런스 1건 + 국서 형식 예시안 */
+export function mockA5(ctx: A5MockContext): A5Output {
+  const f = ctx.plan?.fields;
+  const head = ctx.plan?.isDraft ? "※ 기획안 초안 기준\n\n" : "";
+  const facts = f ? `- 행사명: ${f.title}\n- 일시: ${f.datetime}\n- 장소: ${f.venue}` : "- 행사명: [ ]\n- 일시: [ ]\n- 장소: [ ]";
+  const byDept: Record<string, A5Output["examples"]> = {
+    planning: [{ title: "기획안 초안 예시", kind: "기획안 초안", format: "markdown", content: `${head}# 기획안 초안\n${facts}\n- 예산액: [ ]\n\n## 타임테이블\n| 시간 | 내용 |\n|---|---|\n| [ ] | [ ] |`, external_send: false }],
+    finance: [{ title: "예산 시나리오 표", kind: "예산 시나리오", format: "markdown", content: `${head}| 구분 | 금액 |\n|---|---|\n| 최소 | [ ] |\n| 표준 | [ ] |\n| 확대 | [ ] |`, external_send: false }],
+    secretariat: [
+      { title: "제휴 요청서 구성안", kind: "슬라이드 구성안", format: "markdown", content: `${head}1. 표지\n2. 행사 소개\n${facts}`, external_send: false },
+      { title: "제휴 문의 이메일 문안", kind: "이메일 문안", format: "markdown", content: `${head}안녕하세요, 학생회입니다.\n${facts}`, external_send: true },
+    ],
+    promotion: [
+      { title: "카드뉴스 장별 문구", kind: "카드뉴스", format: "markdown", content: `${head}1장: ${f?.title ?? "[행사명]"}\n2장: ${f?.datetime ?? "[일시]"} · ${f?.venue ?? "[장소]"}`, external_send: false },
+      { title: "포스터 목업", kind: "포스터 목업", format: "svg", content: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 850"><rect width="600" height="850" fill="#1d3557"/><text x="300" y="400" fill="#fff" font-size="48" text-anchor="middle">${(f?.title ?? "행사명").replace(/[<&>]/g, "")}</text></svg>`, external_send: false },
+    ],
+    operations: [{ title: "집행 매뉴얼 초안", kind: "집행 매뉴얼", format: "markdown", content: `${head}## 역할표\n| 역할 | 인원 |\n|---|---|\n| 배부 | [ ] |\n\n## 비상 대응\n- [ ]`, external_send: false }],
+  };
+  return {
+    references: ctx.sources.map((s, i) => ({ source_id: `S${i + 1}`, summary: `${s.title} 요약`, benchmark_points: ["구성 참고"], relevance: "같은 유형의 행사" })),
+    examples: byDept[ctx.task.deptCode] ?? [{ title: "예시안", kind: "초안", format: "markdown", content: `${head}${facts}`, external_send: false }],
+    plan_draft:
+      ctx.task.deptCode === "planning"
+        ? { title: f?.title ?? ctx.task.title, event_date: null, datetime: f?.datetime ?? "", venue: f?.venue ?? "", budget: null, host: "학생회", organizer: "기획국", purpose: "mock: 행사 목적", content: "mock: 행사 내용", timetable: [{ time: "12:00", item: "시작" }] }
+        : null,
+    notes: ctx.searchFailed ? "외부 레퍼런스 검색 실패 — 내부 자료만 사용" : "mock 예시안",
+  };
+}
+
+export const MOCK_SEARCH_HANDLERS: Record<string, MockSearchHandler> = { a5_search: mockA5Search };
+
+export const MOCK_HANDLERS: Record<string, MockHandler> = {
+  a5: (req: CompleteRequest) => mockA5(req.mockContext as A5MockContext),
+  a6: (req: CompleteRequest) => mockA6(req.mockContext as A6MockContext),
+  a2p: (req: CompleteRequest) => {
+    // 결정적: 타임테이블에 '리허설'이 있고 같은 업무가 없으면 집행국 업무 추가, 기획안 장소가 업무명에 없으면 변경 없음
+    const ctx = req.mockContext as { plan: { timetable: { time: string; item: string }[] }; tasks: { ref: string; title: string }[] };
+    const reh = ctx.plan.timetable.find((t) => /리허설/.test(t.item));
+    return {
+      add_tasks: reh && !ctx.tasks.some((t) => /리허설/.test(t.title)) ? [{ title: "현장 리허설 준비", description: `기획안 타임테이블: ${reh.time} ${reh.item}`, lead_department: "operations", support_departments: ["planning"], template_key: null, due_date: null, reason: "기획안 타임테이블에 리허설" }] : [],
+      update_tasks: [],
+      cancel_tasks: [],
+      notes: "mock: 결재 기획안 점검",
+    };
+  },
+  a7: (req: CompleteRequest) => {
+    const s = (req.mockContext as { summary: { overdue: number; critical: number; evidence: number } }).summary;
+    return { summary: `mock 노티스: 초과 ${s.overdue}건, 긴급 ${s.critical}건, 증빙 누락 ${s.evidence}건을 먼저 챙기세요.`, top_actions: ["초과 업무 담당자 확인"] };
+  },
+  a1: (req: CompleteRequest) => mockA1(req.mockContext as A1MockContext),
+  a2: (req: CompleteRequest) => mockA2(req.mockContext as A2MockContext),
+};
