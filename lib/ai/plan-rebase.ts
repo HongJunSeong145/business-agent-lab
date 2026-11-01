@@ -90,7 +90,7 @@ export async function runPlanRebaseJob(db: Db, provider: AiProvider | null, aiJo
         agent: "a2p", promptVersion: A2P_PROMPT_VERSION, schema: a2pSchema, jobId: aiJobId,
         budgetKrw: await getNumberSetting(db, termId, "AI_DAILY_BUDGET_KRW", 30000), usdKrw: Number(process.env.USD_KRW ?? 1400), maxTokens: 8000,
         system: A2P_SYSTEM,
-        documents: [{ name: "결재 기획안", content: maskText(planToText(f)) }],
+        documents: [{ name: "결재 기획안", content: maskText(planToText(f, version.content_text)) }],
         prompt: a2pPrompt({ projectTitle: project.title, planVersion: version.version_no, tasks: list }),
         mockContext: { plan: f, tasks: list },
       });

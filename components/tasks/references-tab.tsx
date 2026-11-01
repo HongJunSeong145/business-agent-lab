@@ -82,6 +82,15 @@ export function ReferencesTab({ taskId, onChanged }: { taskId: string; onChanged
         <p className="text-xs text-muted">AI 레퍼런스·예시안은 참고용입니다. 그대로 쓰지 말고 고쳐 쓰세요.</p>
         {data.canAdd ? <RequestDialog taskId={taskId} ctx={data.context} aiAvailable={data.aiAvailable} disabled={pending} onDone={after} /> : null}
       </div>
+      <p className="rounded-lg border border-border px-3 py-1.5 text-xs" data-testid="ref-context">
+        AI 제작 기준:{" "}
+        {data.context.plan ? (
+          <strong>기획안 v{data.context.plan.versionNo}{data.context.plan.isDraft ? " (초안 — 결재 전)" : " (결재본)"}</strong>
+        ) : (
+          <span className="text-warning-text">기획안 없음 — 기획국 기획안 업무에 기획안 파일을 올리면 그 기획안을 기준으로 만듭니다</span>
+        )}
+        {data.context.meeting ? <span className="text-muted"> · 회의록 &lsquo;{data.context.meeting.title}&rsquo;</span> : null}
+      </p>
 
       {data.requests.length ? (
         <ul className="space-y-1" aria-label="제작 의뢰">

@@ -57,7 +57,8 @@ export function TaskRow({ task, today, deptCode }: { task: TaskRowData; today: s
     setCompleted(next);
     setBusy(true);
     try {
-      await api(`/api/tasks/${task.id}/complete`, { body: { completed: next } });
+      const r = await api<{ planNote?: string | null }>(`/api/tasks/${task.id}/complete`, { body: { completed: next } });
+      if (r?.planNote) toast(r.planNote, { ms: 8000 });
       router.refresh();
       if (next) {
         toast(`'${task.title}' 완료 처리했습니다.`, {
@@ -76,7 +77,8 @@ export function TaskRow({ task, today, deptCode }: { task: TaskRowData; today: s
     setManual(value);
     setOpen(false);
     try {
-      await api(`/api/tasks/${task.id}/progress`, { body: { value } });
+      const r = await api<{ planNote?: string | null }>(`/api/tasks/${task.id}/progress`, { body: { value } });
+      if (r?.planNote) toast(r.planNote, { ms: 8000 });
       router.refresh();
     } catch (e) {
       setManual(null, true);

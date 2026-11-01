@@ -13,6 +13,7 @@ import { aiAvailable } from "@/lib/ai/runtime";
 import { sanitizeFileName } from "./meetings";
 import { loadTask, taskResource } from "./tasks";
 import { ServiceError } from "./invitations";
+import { importPlanFromDeliverable } from "./plans";
 
 /**
  * 작업물 (8-7 작업물 탭, PART 7 단계 10~11, T12·T13).
@@ -103,7 +104,7 @@ export async function uploadDeliverable(db: Db, storage: Storage, actor: ActorT,
   }
 
   try {
-    return await db.$transaction(async (tx) => {
+    const r = await db.$transaction(async (tx) => {
       const d =
         deliverable ??
         (await tx.deliverable.create({
@@ -149,6 +150,9 @@ export async function uploadDeliverable(db: Db, storage: Storage, actor: ActorT,
       });
       return { deliverableId: d.id, versionId: v.id, versionNo, aiJobId };
     });
+    // 기획국 '기획안' 업무에 올린 문서는 사업 기획안 새 버전으로 자동 반영(다른 국서 레퍼런스·평가의 기준)
+    const planVersion = await importPlanFromDeliverable(db, r.versionId).catch(() => null);
+    return { ...r, planVersion };
   } catch (e) {
     if (file) await storage.delete(file.key).catch(() => undefined);
     throw e;
@@ -288,6 +292,14 @@ export async function updateDeliverable(db: Db, actor: ActorT, deliverableId: st
     if (v.data.versionNote) await tx.deliverableVersion.update({ where: { id: v.data.versionNote.versionId }, data: { note: v.data.versionNote.note || null } });
     await writeAudit(tx, { actorId: actor.userId, action: "deliverable.update", entityType: "task", entityId: d.task_id, diff: { deliverableId: d.id, ...v.data } });
   });
+  // 기획안 업무의 '최종본' 지정 → 그 버전을 사업 기획안의 현재 버전으로
+  if (v.data.finalVersionId) {
+    const imported = await importPlanFromDeliverable(db, v.data.finalVersionId).catch(() => null);
+    if (!imported) {
+      const pv = await db.planVersion.findUnique({ where: { source_deliverable_version_id: v.data.finalVersionId } });
+      if (pv) await db.plan.update({ where: { id: pv.plan_id }, data: { current_version_id: pv.id } });
+    }
+  }
 }
 
 /** 사업 작업물 보관함: 국서(주관)별로 작업물의 최종본(없으면 최신 버전) — 모든 구성원 열람 */

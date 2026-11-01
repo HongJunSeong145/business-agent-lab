@@ -51,11 +51,11 @@ const time = (s: string) => new Date(s).toLocaleString("ko-KR", { timeZone: "Asi
 const sizeLabel = (n: number | null) => (n === null ? "" : n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))}KB` : `${(n / 1024 / 1024).toFixed(1)}MB`);
 
 /** 업로드 요청 (드로어·업무 행 공용) */
-export async function postDeliverable(taskId: string, fd: FormData): Promise<{ versionNo: number; aiJobId: string | null }> {
+export async function postDeliverable(taskId: string, fd: FormData): Promise<{ versionNo: number; aiJobId: string | null; planVersion: { versionNo: number } | null }> {
   const res = await fetch(`/api/tasks/${taskId}/deliverables`, { method: "POST", body: fd });
-  const body = (await res.json().catch(() => ({}))) as { versionNo?: number; aiJobId?: string | null; error?: string };
+  const body = (await res.json().catch(() => ({}))) as { versionNo?: number; aiJobId?: string | null; planVersion?: { versionNo: number } | null; error?: string };
   if (!res.ok) throw new Error(body.error ?? "업로드하지 못했습니다. 다시 시도하세요.");
-  return { versionNo: body.versionNo ?? 1, aiJobId: body.aiJobId ?? null };
+  return { versionNo: body.versionNo ?? 1, aiJobId: body.aiJobId ?? null, planVersion: body.planVersion ?? null };
 }
 
 /** 업무 드로어 › 작업물 탭 (8-7): 버전 목록·미리보기·최신 AI 평가·업로드 */
@@ -140,7 +140,7 @@ function UploadForm({ taskId, deliverables, onDone }: { taskId: string; delivera
     setPending(true);
     try {
       const r = await postDeliverable(taskId, fd);
-      toast(`v${r.versionNo} 업로드 완료.${r.aiJobId ? " AI가 평가 중입니다." : ""}`);
+      toast(`v${r.versionNo} 업로드 완료.${r.aiJobId ? " AI가 평가 중입니다." : ""}${r.planVersion ? ` 사업 기획안 v${r.planVersion.versionNo}로 반영했습니다(기획안 탭·다른 국서 레퍼런스 기준).` : ""}`, { ms: 8000 });
       setFile(null);
       setTarget(null);
       formRef.current?.reset();
