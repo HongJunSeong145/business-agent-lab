@@ -39,7 +39,7 @@ export async function loadCalendar(actor: Actor & { termId: string }, from: stri
       where: { deleted_at: null, due_date: { gte: f, lte: t }, departments: { some: { role: "lead", department: { term_id: actor.termId } } } },
       include: { departments: { where: { role: "lead" }, include: { department: { select: { code: true } } } }, project: { select: { title: true, status: true } } },
     }),
-    prisma.scheduleEvent.findMany({ where: { term_id: actor.termId, start: { gte: f, lte: t } }, include: { project: { select: { title: true, status: true } } } }),
+    prisma.scheduleEvent.findMany({ where: { term_id: actor.termId, state: { not: "dismissed" }, start: { gte: f, lte: t }, OR: [{ project_id: null }, { project: { deleted_at: null } }] }, include: { project: { select: { title: true, status: true } } } }),
     prisma.proposal.findMany({ where: { term_id: actor.termId, status: "pending", kind: "new_task" } }),
   ]);
   const items: CalendarItem[] = [];

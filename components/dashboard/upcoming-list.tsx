@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { AlertTriangle, Flag } from "lucide-react";
+import { AlertTriangle, Flag, Trash2 } from "lucide-react";
+import { deleteTaskWithUndo } from "@/components/tasks/task-actions";
+import { emitChanged } from "@/components/layout/live-refresh";
 import { DeptChip } from "@/components/dept/dept-chip";
 import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/client-api";
@@ -44,6 +46,34 @@ export function UpcomingList({ items, today, canEdit }: { items: UpcomingItem[];
     }
   };
 
+  // 30일 일정에서 바로 삭제 — 업무는 업무 자체를 삭제(국서 공간·캘린더·진척도 함께), 일정 항목은 일정에서 삭제, AI 제안은 거절
+  const remove = async (i: UpcomingItem) => {
+    if (i.kind === "deadline") return void deleteTaskWithUndo(i.id, i.title, () => router.refresh());
+    if (i.kind === "milestone") {
+      try {
+        await api(`/api/schedule-events/${i.id}`, { method: "DELETE" });
+        router.refresh();
+        emitChanged();
+        toast(`'${i.title}' 일정을 삭제했습니다.`, {
+          ms: 10000,
+          action: { label: "되돌리기", onClick: () => void api(`/api/schedule-events/${i.id}/restore`, { body: {} }).then(() => (router.refresh(), emitChanged())).catch((e: Error) => toast(e.message, { tone: "error" })) },
+        });
+      } catch (e) {
+        toast((e as Error).message, { tone: "error" });
+      }
+      return;
+    }
+    if (!window.confirm(`AI 제안 '${i.title}'을(를) 거절할까요? (검토 대기에서 빠집니다)`)) return;
+    try {
+      await api("/api/proposals/decide", { body: { approve: [], reject: [i.id] } });
+      toast("제안을 거절했습니다.");
+      router.refresh();
+      emitChanged();
+    } catch (e) {
+      toast((e as Error).message, { tone: "error" });
+    }
+  };
+
   const days = [...new Set(items.map((i) => i.due))];
   return (
     <div className="space-y-3" data-testid="upcoming-list">
@@ -69,6 +99,17 @@ export function UpcomingList({ items, today, canEdit }: { items: UpcomingItem[];
                   ) : (
                     <span className="min-w-0 flex-1 truncate">{i.title}{i.projectTitle ? <span className="text-muted"> · {i.projectTitle}</span> : null}</span>
                   )}
+                  {canEdit ? (
+                    <button
+                      type="button"
+                      className="shrink-0 rounded p-0.5 text-muted hover:text-danger"
+                      aria-label={`${i.title} ${i.kind === "proposal" ? "제안 거절" : "삭제"}`}
+                      title={i.kind === "deadline" ? "업무 삭제(되돌리기 가능)" : i.kind === "milestone" ? "일정에서 삭제(되돌리기 가능)" : "AI 제안 거절"}
+                      onClick={() => void remove(i)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  ) : null}
                 </div>
                 {i.kind === "deadline" ? (
                   <div className="mt-0.5 flex flex-wrap items-center gap-2 pl-0.5 text-xs text-muted">

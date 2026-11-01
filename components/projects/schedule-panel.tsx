@@ -12,6 +12,7 @@ import { api } from "@/lib/client-api";
 import type { ProjectScheduleView } from "@/lib/services/schedule";
 import { TEMPLATES, type TemplateKey } from "@kgb/rules";
 import { cn } from "@/lib/utils";
+import { emitChanged } from "@/components/layout/live-refresh";
 
 const fmt = (s: string | null) => (s ? `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}` : "—");
 
@@ -26,6 +27,18 @@ export function SchedulePanel({ projectId, view, canEdit }: { projectId: string;
   }
   const a = r.alternatives;
   const ms = r.milestones[0];
+  const milestone = async (what: "delete" | "restore") => {
+    const id = view.milestoneEvent!.id;
+    try {
+      if (what === "delete") await api(`/api/schedule-events/${id}`, { method: "DELETE" });
+      else await api(`/api/schedule-events/${id}/restore`, { body: {} });
+      toast(what === "delete" ? "행정실 송부 마감을 일정에서 삭제했습니다." : "일정을 되살렸습니다.");
+      router.refresh();
+      emitChanged();
+    } catch (e) {
+      toast((e as Error).message, { tone: "error" });
+    }
+  };
 
   return (
     <div className="space-y-3" data-testid="schedule-panel">
@@ -49,6 +62,16 @@ export function SchedulePanel({ projectId, view, canEdit }: { projectId: string;
         <p className="text-sm">
           <span className="font-medium">행정실 송부 마감:</span> {ms.date ?? `${ms.latest} (이미 지남)`}{" "}
           <span className="text-xs text-muted">{ms.reason}</span>
+          {view.milestoneEvent && canEdit ? (
+            view.milestoneEvent.state === "dismissed" ? (
+              <span className="ml-2 text-xs">
+                <span className="text-muted">캘린더·30일 일정에서 삭제됨 · </span>
+                <button className="underline" onClick={() => void milestone("restore")}>되살리기</button>
+              </span>
+            ) : (
+              <button className="ml-2 text-xs text-muted underline hover:text-danger" onClick={() => void milestone("delete")}>캘린더·30일 일정에서 삭제</button>
+            )
+          ) : null}
         </p>
       ) : null}
       {view.conflicts.length ? (

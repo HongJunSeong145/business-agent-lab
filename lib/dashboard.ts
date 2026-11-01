@@ -55,7 +55,7 @@ export async function loadDashboard(termId: string) {
 
   const ghostProposals = await prisma.proposal.findMany({ where: { term_id: termId, status: "pending", kind: "new_task" } });
   const milestones = await prisma.scheduleEvent.findMany({
-    where: { term_id: termId, start: { gte: new Date(`${today}T00:00:00Z`), lte: new Date(`${in30}T00:00:00Z`) }, project: { status: { not: "cancelled" } } },
+    where: { term_id: termId, state: { not: "dismissed" }, start: { gte: new Date(`${today}T00:00:00Z`), lte: new Date(`${in30}T00:00:00Z`) }, OR: [{ project_id: null }, { project: { status: { not: "cancelled" }, deleted_at: null } }] },
     include: { project: { select: { title: true } } },
   });
 

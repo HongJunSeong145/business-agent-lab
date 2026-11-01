@@ -13,6 +13,10 @@ import { runProposeJob } from "@/lib/ai/agents";
 import { MockProvider } from "@/lib/ai/provider";
 import { MOCK_HANDLERS } from "@/lib/ai/mock";
 import { loadReview } from "@/lib/review";
+import { loadDashboard } from "@/lib/dashboard";
+import { loadCalendar } from "@/lib/calendar";
+import { moveProjectDates } from "@/lib/services/projects";
+import { dismissScheduleEvent, listDismissedEvents, restoreScheduleEvent } from "@/lib/services/schedule-events";
 import type { Actor } from "@/lib/auth/can";
 import type { Storage } from "@/lib/storage";
 
@@ -187,5 +191,48 @@ describe("업무 수정 → 연결 반영", () => {
     await updateTask(prisma, pres, plan.id, { due_date: "2026-11-18" });
     const item = (await loadReview(pres.termId)).flatMap((g) => g.projects.flatMap((x) => x.items)).find((i) => i.kind === "deadline")!;
     expect(item.currentDue).toBe("2026-11-18");
+  });
+});
+
+describe("30일 일정·캘린더의 일정 항목(행정실 송부 마감) 삭제", () => {
+  it("삭제하면 대시보드 30일 일정·캘린더에서 빠지고, 행사일을 옮겨 다시 계산해도 되살아나지 않으며, 되살리기로 복원", async () => {
+    const p = await createProject(prisma, pres, { title: "연말 축제", event_start: "2026-12-18", funding: [{ source: "school", amount_planned: 3000000 }] });
+    await applyStandardTemplate(prisma, pres, p.id, ["PLN_DRAFT"], TODAY);
+    const ms = await prisma.scheduleEvent.findFirstOrThrow({ where: { project_id: p.id, rule_key: "SCHOOL_SUBMIT" } });
+    const inUpcoming = async () => (await loadDashboard(pres.termId)).upcoming.some((u) => u.kind === "milestone" && u.id === ms.id);
+    const inCalendar = async () => (await loadCalendar(pres, "2026-11-01", "2026-12-31")).some((c) => c.id === `se:${ms.id}`);
+    expect(await inUpcoming()).toBe(true);
+    expect(await inCalendar()).toBe(true);
+
+    await dismissScheduleEvent(prisma, pres, ms.id);
+    expect(await inUpcoming()).toBe(false);
+    expect(await inCalendar()).toBe(false);
+    expect((await listDismissedEvents(prisma, pres)).map((e) => e.id)).toEqual([ms.id]);
+    await moveProjectDates(prisma, pres, p.id, { event_start: "2026-12-19" }); // 규칙 재계산
+    expect((await prisma.scheduleEvent.findUniqueOrThrow({ where: { id: ms.id } })).state).toBe("dismissed");
+    expect(await prisma.scheduleEvent.count({ where: { project_id: p.id } })).toBe(1); // 새로 만들지 않음
+    await expect(dismissScheduleEvent(prisma, promo, ms.id)).rejects.toThrow();
+
+    await restoreScheduleEvent(prisma, pres, ms.id);
+    expect(await inUpcoming()).toBe(true);
+    expect(await inCalendar()).toBe(true);
+  });
+
+  it("업무를 30일 일정에서 지우면(업무 삭제) 국서 공간·캘린더·대시보드 국서 카드에서 함께 빠지고, 삭제한 사업의 일정 항목도 사라진다", async () => {
+    const p = await createProject(prisma, pres, { title: "축제", event_start: "2026-12-18", funding: [{ source: "school", amount_planned: 0 }] });
+    await applyStandardTemplate(prisma, pres, p.id, ["PLN_DRAFT"], TODAY);
+    const t = await createTask(prisma, pres, { title: "포스터", lead_department_id: dept.promotion, project_id: p.id, due_date: "2026-11-20" });
+    let d = await loadDashboard(pres.termId);
+    expect(d.upcoming.some((u) => u.id === t.id)).toBe(true);
+    await deleteTask(prisma, pres, t.id);
+    d = await loadDashboard(pres.termId);
+    expect(d.upcoming.some((u) => u.id === t.id)).toBe(false);
+    expect(d.deptCards.find((c) => c.code === "promotion")!.urgent.some((u) => u.id === t.id)).toBe(false);
+    expect((await loadCalendar(pres, "2026-11-01", "2026-12-31")).some((c) => c.id === `task:${t.id}`)).toBe(false);
+
+    await deleteProject(prisma, pres, p.id);
+    d = await loadDashboard(pres.termId);
+    expect(d.upcoming.some((u) => u.kind === "milestone")).toBe(false);
+    expect((await loadCalendar(pres, "2026-11-01", "2026-12-31")).some((c) => c.kind === "milestone")).toBe(false);
   });
 });
